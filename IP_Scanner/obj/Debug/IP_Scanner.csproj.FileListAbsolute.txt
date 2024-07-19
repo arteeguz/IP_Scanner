@@ -1,0 +1,17 @@
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner.csproj.AssemblyReference.cache
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\InputWindow.baml
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\MainWindow.baml
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\InputWindow.g.cs
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\MainWindow.g.cs
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\App.g.cs
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner_MarkupCompile.cache
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner.g.resources
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner.Properties.Resources.resources
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner.csproj.GenerateResource.cache
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner.csproj.CoreCompileInputs.cache
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\bin\Debug\IP_Scanner.exe.config
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\bin\Debug\IP_Scanner.exe
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\bin\Debug\IP_Scanner.pdb
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner.exe
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner.pdb
+C:\Users\artee\source\repos\IP_Scanner\IP_Scanner\obj\Debug\IP_Scanner_MarkupCompile.lref
