@@ -63,6 +63,7 @@
                 <DataGridTextColumn Header="IP Address" Binding="{Binding IPAddress}" Width="*" />
                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />
                 <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*" />
+                <DataGridTextColumn Header="Machine SKU" Binding="{Binding MachineSKU}" Width="*" />
             </DataGrid.Columns>
         </DataGrid>
     </Grid>

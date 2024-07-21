@@ -131,7 +131,7 @@ namespace IPProcessingTool
 
         private async Task ProcessIPAsync(string ip)
         {
-            var scanStatus = new ScanStatus { IPAddress = ip, Status = "Processing", Details = "" };
+            var scanStatus = new ScanStatus { IPAddress = ip, Status = "Processing", Details = "", MachineSKU = "" };
             AddScanStatus(scanStatus);
 
             string date = DateTime.Now.ToString("M/dd/yyyy");
@@ -141,6 +141,7 @@ namespace IPProcessingTool
             string hostname = "N/A";
             string lastLoggedUser = "N/A";
             string machineType = "N/A";
+            string machineSKU = "N/A";
             string windowsVersion = "N/A";
 
             Logger.Log(LogLevel.INFO, "Started processing IP", context: "ProcessIPAsync", additionalInfo: ip);
@@ -168,6 +169,14 @@ namespace IPProcessingTool
                         {
                             hostname = machine["Name"]?.ToString();
                             machineType = machine["Model"]?.ToString();
+
+                            var skuQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystemProduct");
+                            var skuSearcher = new ManagementObjectSearcher(scope, skuQuery);
+                            var sku = skuSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
+                            if (sku != null)
+                            {
+                                machineSKU = sku["IdentifyingNumber"]?.ToString();
+                            }
 
                             var userQuery = new ObjectQuery("SELECT * FROM Win32_NetworkLoginProfile");
                             var userSearcher = new ManagementObjectSearcher(scope, userQuery);
@@ -214,7 +223,8 @@ namespace IPProcessingTool
 
             scanStatus.Status = status;
             scanStatus.Details = errorDetails;
-            SaveOutput(ip, hostname, lastLoggedUser, machineType, windowsVersion, date, time, status, errorDetails);
+            scanStatus.MachineSKU = machineSKU;
+            SaveOutput(ip, hostname, lastLoggedUser, machineType, machineSKU, windowsVersion, date, time, status, errorDetails);
             UpdateScanStatus(scanStatus);
 
             Logger.Log(LogLevel.INFO, $"Processed IP {ip}", context: "ProcessIPAsync", additionalInfo: $"Status: {status}, Details: {errorDetails}");
@@ -270,9 +280,9 @@ namespace IPProcessingTool
             }
         }
 
-        private void SaveOutput(string ip, string hostname, string lastLoggedUser, string machineType, string windowsVersion, string date, string time, string status, string errorDetails)
+        private void SaveOutput(string ip, string hostname, string lastLoggedUser, string machineType, string machineSKU, string windowsVersion, string date, string time, string status, string errorDetails)
         {
-            var newLine = $"\"{ip}\",\"{hostname}\",\"{lastLoggedUser}\",\"{machineType}\",\"{windowsVersion}\",\"{date}\",\"{time}\",\"{status}\",\"{errorDetails}\"";
+            var newLine = $"\"{ip}\",\"{hostname}\",\"{lastLoggedUser}\",\"{machineType}\",\"{machineSKU}\",\"{windowsVersion}\",\"{date}\",\"{time}\",\"{status}\",\"{errorDetails}\"";
             using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
             {
                 writer.WriteLine(newLine);
@@ -283,7 +293,7 @@ namespace IPProcessingTool
         {
             if (!File.Exists(outputFilePath) || new FileInfo(outputFilePath).Length == 0)
             {
-                var header = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"WindowsVersion\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
+                var header = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"MachineSKU\",\"WindowsVersion\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
                 using (var writer = new StreamWriter(outputFilePath, false, Encoding.UTF8))
                 {
                     writer.WriteLine(header);
@@ -322,5 +332,6 @@ namespace IPProcessingTool
         public string IPAddress { get; set; }
         public string Status { get; set; }
         public string Details { get; set; }
+        public string MachineSKU { get; set; }
     }
 }

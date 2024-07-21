@@ -1,3 +1,6 @@
 echo ".vs/" >> .gitignore
 echo "bin/" >> .gitignore
 echo "obj/" >> .gitignore
+.vs/
+bin/
+obj/
