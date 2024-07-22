@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:IPProcessingTool"
         Title="RBC Capital Markets - IP Processing Tool" Height="600" Width="800" WindowStartupLocation="CenterScreen">
-    <!-- <Window.Background>
+    <!--  <Window.Background>
         <ImageBrush ImageSource="pack://application:,,,/images/bg.png" Stretch="UniformToFill" />
     </Window.Background> -->
     <Window.Resources>
@@ -12,10 +12,11 @@
             <Setter Property="Padding" Value="10"/>
             <Setter Property="Background" Value="#005A9E"/>
             <Setter Property="Foreground" Value="White"/>
-            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontSize" Value="16"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="BorderBrush" Value="#003366"/>
             <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Height" Value="50"/>
             <!-- Rounded Corners -->
             <Setter Property="Template">
                 <Setter.Value>
@@ -30,20 +31,9 @@
                 </Setter.Value>
             </Setter>
         </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Margin" Value="10"/>
-            <Setter Property="Padding" Value="5"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="BorderBrush" Value="#003366"/>
-            <Setter Property="BorderThickness" Value="2"/>
-        </Style>
-        <Style TargetType="Label">
-            <Setter Property="Margin" Value="10"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="#333"/>
-            <!-- Center Text Alignment -->
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Style x:Key="GreenButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="Green"/>
+            <Setter Property="Foreground" Value="White"/>
         </Style>
     </Window.Resources>
     <Grid>
@@ -54,15 +44,21 @@
         </Grid.RowDefinitions>
         <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Top" Grid.Row="0">
             <Image Source="pack://application:,,,/images/RBC-Logo.png" Width="200" Height="100" Margin="10"/>
-            <Label Content="IP Processing Tool" FontSize="24" FontWeight="Bold" Foreground="#005A9E" Margin="10"/>
-            <Label Content="Welcome to RBC Capital Markets' IP Processing Tool. This application allows you to process IP addresses efficiently." 
+            <Label Content="&#x9;IP Processing Tool" FontSize="24" FontWeight="Bold" Foreground="#005A9E" Margin="10"/>
+            <Label Content="          Welcome to RBC Capital Markets' IP Processing Tool" 
                    FontSize="14" Foreground="#005A9E" Margin="10" HorizontalAlignment="Center" Width="400"/>
-            <Button Name="Button1" Content="Enter IP Address" Click="Button1_Click" Width="200"/>
-            <Button Name="Button2" Content="Load IPs from CSV" Click="Button2_Click" Width="200"/>
-            <Button Name="Button3" Content="Enter IP Segment" Click="Button3_Click" Width="200"/>
-            <Button Name="Button4" Content="Load Segments from CSV" Click="Button4_Click" Width="200"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Name="Button1" Content="Enter IP Address" Click="Button1_Click" Grid.Column="0" Margin="10,2,0,63"/>
+                <Button Name="Button3" Content="Enter IP Segment" Click="Button3_Click" Grid.Column="1" Margin="10,0,10,60"/>
+                <Button Name="Button2" Content="Load IPs from CSV" Click="Button2_Click" Grid.Column="0" Style="{StaticResource GreenButtonStyle}" Margin="10,57,0,3"/>
+                <Button Name="Button4" Content="Load Segments from CSV" Click="Button4_Click" Grid.Column="1" Style="{StaticResource GreenButtonStyle}" Margin="10,62,10,9"/>
+            </Grid>
         </StackPanel>
-        <DataGrid Name="StatusDataGrid" Grid.Row="1" Margin="20" AutoGenerateColumns="False" IsReadOnly="True" CanUserResizeColumns="False">
+        <DataGrid Name="StatusDataGrid" Grid.Row="1" Margin="20,35,20,5" AutoGenerateColumns="False" IsReadOnly="True" CanUserResizeColumns="False">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="IP Address" Binding="{Binding IPAddress}" Width="*" />
                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*" />

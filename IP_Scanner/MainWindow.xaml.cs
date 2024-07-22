@@ -301,37 +301,63 @@ namespace IPProcessingTool
         private void SaveOutput(string ip, string hostname, string lastLoggedUser, string machineType, string machineSKU, string installedCoreSoftware, string ramSize, string windowsVersion, string date, string time, string status, string errorDetails)
         {
             var newLine = $"\"{ip}\",\"{hostname}\",\"{lastLoggedUser}\",\"{machineType}\",\"{machineSKU}\",\"{installedCoreSoftware}\",\"{ramSize}\",\"{windowsVersion}\",\"{date}\",\"{time}\",\"{status}\",\"{errorDetails}\"";
-            if (!IsFileLocked(outputFilePath))
+            try
             {
-                using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
+                if (!IsFileLocked(outputFilePath))
                 {
-                    writer.WriteLine(newLine);
+                    using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
+                    {
+                        writer.WriteLine(newLine);
+                    }
+                }
+                else
+                {
+                    Logger.Log(LogLevel.ERROR, $"The file {outputFilePath} is currently in use by another process and cannot be accessed.", context: "SaveOutput");
+                    MessageBox.Show($"The file {outputFilePath} is currently in use by another process and cannot be accessed.", "File Locked", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
-            else
+            catch (IOException ioEx)
             {
-                Logger.Log(LogLevel.ERROR, $"The file {outputFilePath} is currently in use by another process and cannot be accessed.", context: "SaveOutput");
-                MessageBox.Show($"The file {outputFilePath} is currently in use by another process and cannot be accessed.", "File Locked", MessageBoxButton.OK, MessageBoxImage.Error);
+                Logger.Log(LogLevel.ERROR, $"IOException while writing to file {outputFilePath}: {ioEx.Message}", context: "SaveOutput");
+                MessageBox.Show($"IOException while writing to file {outputFilePath}: {ioEx.Message}", "File Access Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log(LogLevel.ERROR, $"Exception while writing to file {outputFilePath}: {ex.Message}", context: "SaveOutput");
+                MessageBox.Show($"Exception while writing to file {outputFilePath}: {ex.Message}", "File Access Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private void EnsureCsvFile()
         {
-            if (!File.Exists(outputFilePath) || new FileInfo(outputFilePath).Length == 0)
+            try
             {
-                var header = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"MachineSKU\",\"InstalledCoreSoftware\",\"RAMSize\",\"WindowsVersion\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
-                if (!IsFileLocked(outputFilePath))
+                if (!File.Exists(outputFilePath) || new FileInfo(outputFilePath).Length == 0)
                 {
-                    using (var writer = new StreamWriter(outputFilePath, false, Encoding.UTF8))
+                    var header = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"MachineSKU\",\"InstalledCoreSoftware\",\"RAMSize\",\"WindowsVersion\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
+                    if (!IsFileLocked(outputFilePath))
                     {
-                        writer.WriteLine(header);
+                        using (var writer = new StreamWriter(outputFilePath, false, Encoding.UTF8))
+                        {
+                            writer.WriteLine(header);
+                        }
+                    }
+                    else
+                    {
+                        Logger.Log(LogLevel.ERROR, $"The file {outputFilePath} is currently in use by another process and cannot be accessed.", context: "EnsureCsvFile");
+                        MessageBox.Show($"The file {outputFilePath} is currently in use by another process and cannot be accessed.", "File Locked", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
-                else
-                {
-                    Logger.Log(LogLevel.ERROR, $"The file {outputFilePath} is currently in use by another process and cannot be accessed.", context: "EnsureCsvFile");
-                    MessageBox.Show($"The file {outputFilePath} is currently in use by another process and cannot be accessed.", "File Locked", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+            }
+            catch (IOException ioEx)
+            {
+                Logger.Log(LogLevel.ERROR, $"IOException while ensuring file {outputFilePath}: {ioEx.Message}", context: "EnsureCsvFile");
+                MessageBox.Show($"IOException while ensuring file {outputFilePath}: {ioEx.Message}", "File Access Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log(LogLevel.ERROR, $"Exception while ensuring file {outputFilePath}: {ex.Message}", context: "EnsureCsvFile");
+                MessageBox.Show($"Exception while ensuring file {outputFilePath}: {ex.Message}", "File Access Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -339,6 +365,11 @@ namespace IPProcessingTool
         {
             try
             {
+                if (!File.Exists(filePath))
+                {
+                    return false;
+                }
+
                 using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
                 {
                     stream.Close();
