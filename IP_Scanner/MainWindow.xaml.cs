@@ -9,7 +9,6 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Win32;
-using IPProcessingTool;
 
 namespace IPProcessingTool
 {
@@ -131,8 +130,10 @@ namespace IPProcessingTool
 
         private async Task ProcessIPAsync(string ip)
         {
-            var scanStatus = new ScanStatus { IPAddress = ip, Status = "Processing", Details = "", MachineSKU = "" };
+            var scanStatus = new ScanStatus { IPAddress = ip, Status = "Processing", Details = "", MachineSKU = "", InstalledCoreSoftware = "", RAMSize = "" };
             AddScanStatus(scanStatus);
+
+            UpdateStatusBar("Processing IP: " + ip);
 
             string date = DateTime.Now.ToString("M/dd/yyyy");
             string time = DateTime.Now.ToString("HH:mm");
@@ -142,6 +143,8 @@ namespace IPProcessingTool
             string lastLoggedUser = "N/A";
             string machineType = "N/A";
             string machineSKU = "N/A";
+            string installedCoreSoftware = "N/A";
+            string ramSize = "N/A";
             string windowsVersion = "N/A";
 
             Logger.Log(LogLevel.INFO, "Started processing IP", context: "ProcessIPAsync", additionalInfo: ip);
@@ -186,6 +189,18 @@ namespace IPProcessingTool
                                 lastLoggedUser = user["Name"]?.ToString();
                             }
 
+                            // Fetch installed core software
+                            var softwareQuery = new ObjectQuery("SELECT * FROM Win32_Product WHERE Name LIKE 'Core%'");
+                            var softwareSearcher = new ManagementObjectSearcher(scope, softwareQuery);
+                            var softwareList = softwareSearcher.Get().Cast<ManagementObject>().Select(soft => soft["Name"].ToString());
+                            installedCoreSoftware = string.Join(", ", softwareList);
+
+                            // Fetch RAM size
+                            var ramQuery = new ObjectQuery("SELECT * FROM Win32_PhysicalMemory");
+                            var ramSearcher = new ManagementObjectSearcher(scope, ramQuery);
+                            var totalRam = ramSearcher.Get().Cast<ManagementObject>().Sum(ram => Convert.ToDouble(ram["Capacity"]));
+                            ramSize = $"{totalRam / (1024 * 1024 * 1024)} GB";
+
                             windowsVersion = GetWindowsVersion(scope);
                             status = "Complete";
                         }
@@ -224,10 +239,13 @@ namespace IPProcessingTool
             scanStatus.Status = status;
             scanStatus.Details = errorDetails;
             scanStatus.MachineSKU = machineSKU;
-            SaveOutput(ip, hostname, lastLoggedUser, machineType, machineSKU, windowsVersion, date, time, status, errorDetails);
+            scanStatus.InstalledCoreSoftware = installedCoreSoftware;
+            scanStatus.RAMSize = ramSize;
+            SaveOutput(ip, hostname, lastLoggedUser, machineType, machineSKU, installedCoreSoftware, ramSize, windowsVersion, date, time, status, errorDetails);
             UpdateScanStatus(scanStatus);
 
             Logger.Log(LogLevel.INFO, $"Processed IP {ip}", context: "ProcessIPAsync", additionalInfo: $"Status: {status}, Details: {errorDetails}");
+            UpdateStatusBar("Completed processing IP: " + ip);
         }
 
         private void AddScanStatus(ScanStatus scanStatus)
@@ -280,12 +298,20 @@ namespace IPProcessingTool
             }
         }
 
-        private void SaveOutput(string ip, string hostname, string lastLoggedUser, string machineType, string machineSKU, string windowsVersion, string date, string time, string status, string errorDetails)
+        private void SaveOutput(string ip, string hostname, string lastLoggedUser, string machineType, string machineSKU, string installedCoreSoftware, string ramSize, string windowsVersion, string date, string time, string status, string errorDetails)
         {
-            var newLine = $"\"{ip}\",\"{hostname}\",\"{lastLoggedUser}\",\"{machineType}\",\"{machineSKU}\",\"{windowsVersion}\",\"{date}\",\"{time}\",\"{status}\",\"{errorDetails}\"";
-            using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
+            var newLine = $"\"{ip}\",\"{hostname}\",\"{lastLoggedUser}\",\"{machineType}\",\"{machineSKU}\",\"{installedCoreSoftware}\",\"{ramSize}\",\"{windowsVersion}\",\"{date}\",\"{time}\",\"{status}\",\"{errorDetails}\"";
+            if (!IsFileLocked(outputFilePath))
             {
-                writer.WriteLine(newLine);
+                using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
+                {
+                    writer.WriteLine(newLine);
+                }
+            }
+            else
+            {
+                Logger.Log(LogLevel.ERROR, $"The file {outputFilePath} is currently in use by another process and cannot be accessed.", context: "SaveOutput");
+                MessageBox.Show($"The file {outputFilePath} is currently in use by another process and cannot be accessed.", "File Locked", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -293,12 +319,36 @@ namespace IPProcessingTool
         {
             if (!File.Exists(outputFilePath) || new FileInfo(outputFilePath).Length == 0)
             {
-                var header = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"MachineSKU\",\"WindowsVersion\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
-                using (var writer = new StreamWriter(outputFilePath, false, Encoding.UTF8))
+                var header = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"MachineSKU\",\"InstalledCoreSoftware\",\"RAMSize\",\"WindowsVersion\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
+                if (!IsFileLocked(outputFilePath))
                 {
-                    writer.WriteLine(header);
+                    using (var writer = new StreamWriter(outputFilePath, false, Encoding.UTF8))
+                    {
+                        writer.WriteLine(header);
+                    }
+                }
+                else
+                {
+                    Logger.Log(LogLevel.ERROR, $"The file {outputFilePath} is currently in use by another process and cannot be accessed.", context: "EnsureCsvFile");
+                    MessageBox.Show($"The file {outputFilePath} is currently in use by another process and cannot be accessed.", "File Locked", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+        }
+
+        private bool IsFileLocked(string filePath)
+        {
+            try
+            {
+                using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                    stream.Close();
+                }
+            }
+            catch (IOException)
+            {
+                return true;
+            }
+            return false;
         }
 
         private bool IsValidIP(string ip)
@@ -325,6 +375,14 @@ namespace IPProcessingTool
             MessageBox.Show("Invalid IP or Segment format. Please enter a valid IP or Segment.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             Logger.Log(LogLevel.WARNING, "Displayed invalid input message", context: "ShowInvalidInputMessage");
         }
+
+        private void UpdateStatusBar(string message)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                StatusBarText.Text = message;
+            });
+        }
     }
 
     public class ScanStatus
@@ -333,5 +391,7 @@ namespace IPProcessingTool
         public string Status { get; set; }
         public string Details { get; set; }
         public string MachineSKU { get; set; }
+        public string InstalledCoreSoftware { get; set; }
+        public string RAMSize { get; set; }
     }
 }
