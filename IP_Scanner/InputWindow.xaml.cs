@@ -1,4 +1,8 @@
-﻿using System.Linq;
+﻿using Microsoft.Win32;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -9,16 +13,36 @@ namespace IPProcessingTool
 {
     public partial class InputWindow : Window
     {
-        public string InputText { get; private set; }
+        public List<string> InputList { get; private set; }
         private bool isSegment;
+        private bool isCSV;
 
-        public InputWindow(string labelText, bool isSegment = false)
+        public InputWindow()
         {
             InitializeComponent();
-            InputLabel.Content = labelText;
-            InputTextBox.TextChanged += InputTextBox_TextChanged;
-            InputTextBox.PreviewTextInput += InputTextBox_PreviewTextInput;
-            this.isSegment = isSegment;
+            InputList = new List<string>();
+        }
+
+        private void RadioButton_Checked(object sender, RoutedEventArgs e)
+        {
+            InputList.Clear();
+            IPListBox.Items.Clear();
+
+            if (RadioButtonIP.IsChecked == true || RadioButtonSegment.IsChecked == true)
+            {
+                InputPanel.Visibility = Visibility.Visible;
+                FilePanel.Visibility = Visibility.Collapsed;
+                IPListBox.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                InputPanel.Visibility = Visibility.Collapsed;
+                FilePanel.Visibility = Visibility.Visible;
+                IPListBox.Visibility = Visibility.Collapsed;
+            }
+
+            isSegment = RadioButtonSegment.IsChecked == true || RadioButtonSegmentCSV.IsChecked == true;
+            isCSV = RadioButtonIPCSV.IsChecked == true || RadioButtonSegmentCSV.IsChecked == true;
         }
 
         private void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -54,13 +78,14 @@ namespace IPProcessingTool
             return input;
         }
 
-        private void Submit_Click(object sender, RoutedEventArgs e)
+        private void AddButton_Click(object sender, RoutedEventArgs e)
         {
-            if (isSegment ? IsValidIPSegment(InputTextBox.Text) : IsValidIP(InputTextBox.Text))
+            string input = InputTextBox.Text;
+            if (isSegment ? IsValidIPSegment(input) : IsValidIP(input))
             {
-                InputText = InputTextBox.Text;
-                DialogResult = true;
-                Close();
+                InputList.Add(input);
+                IPListBox.Items.Add(input);
+                InputTextBox.Clear();
             }
             else
             {
@@ -68,7 +93,33 @@ namespace IPProcessingTool
             }
         }
 
-        private void Back_Click(object sender, RoutedEventArgs e)
+        private void BrowseButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog
+            {
+                Filter = "CSV Files (*.csv)|*.csv"
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                FilePathTextBlock.Text = openFileDialog.FileName;
+                InputList = File.ReadAllLines(openFileDialog.FileName).Select(line => line.Trim()).ToList();
+            }
+        }
+
+        private void SubmitButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (InputList.Count == 0 && string.IsNullOrEmpty(FilePathTextBlock.Text))
+            {
+                MessageBox.Show("No input provided. Please add IPs or browse a CSV file.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            else
+            {
+                DialogResult = true;
+                Close();
+            }
+        }
+
+        private void BackButton_Click(object sender, RoutedEventArgs e)
         {
             DialogResult = false;
             Close();

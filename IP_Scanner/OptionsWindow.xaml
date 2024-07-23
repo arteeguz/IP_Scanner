@@ -1,0 +1,25 @@
+﻿<Window x:Class="IPProcessingTool.OptionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="IP Scan Options" Height="400" Width="600">
+    <Grid>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+            <ComboBox Name="ScanTypeComboBox" Width="200" Margin="10">
+                <ComboBoxItem Content="Single IP"/>
+                <ComboBoxItem Content="IP Segment"/>
+                <ComboBoxItem Content="Load from CSV"/>
+            </ComboBox>
+            <TextBox Name="InputTextBox" Width="200" Margin="10"/>
+            <Button Name="ReviewButton" Content="Review" Click="ReviewButton_Click" Margin="10"/>
+            <Label Content="Select Information to Fetch:" FontSize="14" FontWeight="Bold" Margin="10"/>
+            <CheckBox Name="HostnameCheckBox" Content="Hostname" Margin="5"/>
+            <CheckBox Name="LastLoggedUserCheckBox" Content="Last Logged User" Margin="5"/>
+            <CheckBox Name="MachineTypeCheckBox" Content="Machine Type" Margin="5"/>
+            <CheckBox Name="MachineSKUCheckBox" Content="Machine SKU" Margin="5"/>
+            <CheckBox Name="InstalledCoreSoftwareCheckBox" Content="Installed Core Software" Margin="5"/>
+            <CheckBox Name="RAMSizeCheckBox" Content="RAM Size" Margin="5"/>
+            <CheckBox Name="WindowsVersionCheckBox" Content="Windows Version" Margin="5"/>
+            <CheckBox Name="WindowsBuildCheckBox" Content="Windows Build" Margin="5"/>
+        </StackPanel>
+    </Grid>
+</Window>

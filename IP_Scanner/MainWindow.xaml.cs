@@ -29,103 +29,74 @@ namespace IPProcessingTool
             Logger.Log(LogLevel.INFO, "Application started");
         }
 
-        private async void Button1_Click(object sender, RoutedEventArgs e)
+        private async void OpenInputWindowButton_Click(object sender, RoutedEventArgs e)
         {
-            var inputWindow = new InputWindow("Enter the IP address:", false);
+            InputWindow inputWindow = new InputWindow();
             if (inputWindow.ShowDialog() == true)
             {
-                string ip = inputWindow.InputText;
-                if (IsValidIP(ip))
+                var inputList = inputWindow.InputList;
+                foreach (var input in inputList)
                 {
-                    Logger.Log(LogLevel.INFO, "User input IP address", context: "Button1_Click", additionalInfo: ip);
-                    await ProcessIPAsync(ip);
-                }
-                else
-                {
-                    Logger.Log(LogLevel.WARNING, "Invalid IP address input", context: "Button1_Click", additionalInfo: ip);
-                    ShowInvalidInputMessage();
-                }
-            }
-        }
-
-        private async void Button2_Click(object sender, RoutedEventArgs e)
-        {
-            OpenFileDialog openFileDialog = new OpenFileDialog
-            {
-                Filter = "CSV Files (*.csv)|*.csv"
-            };
-            if (openFileDialog.ShowDialog() == true)
-            {
-                string csvPath = openFileDialog.FileName;
-                Logger.Log(LogLevel.INFO, "User selected CSV file", context: "Button2_Click", additionalInfo: csvPath);
-
-                var ips = File.ReadAllLines(csvPath).Select(line => line.Trim()).ToList();
-                foreach (var ip in ips)
-                {
-                    if (IsValidIP(ip))
+                    if (IsValidIP(input))
                     {
-                        await ProcessIPAsync(ip);
+                        Logger.Log(LogLevel.INFO, "User input IP address", context: "OpenInputWindowButton_Click", additionalInfo: input);
+                        await ProcessIPAsync(input);
                     }
-                    else
+                    else if (IsValidIPSegment(input))
                     {
-                        HighlightInvalidInput(ip);
-                    }
-                }
-            }
-        }
-
-        private async void Button3_Click(object sender, RoutedEventArgs e)
-        {
-            var inputWindow = new InputWindow("Enter the IP segment (e.g., 192.168.1):", true);
-            if (inputWindow.ShowDialog() == true)
-            {
-                string segment = inputWindow.InputText;
-                if (IsValidIPSegment(segment))
-                {
-                    Logger.Log(LogLevel.INFO, "User input IP segment", context: "Button3_Click", additionalInfo: segment);
-
-                    for (int i = 0; i < 256; i++)
-                    {
-                        string ip = $"{segment}.{i}";
-                        await ProcessIPAsync(ip);
-                    }
-                }
-                else
-                {
-                    Logger.Log(LogLevel.WARNING, "Invalid IP segment input", context: "Button3_Click", additionalInfo: segment);
-                    ShowInvalidInputMessage();
-                }
-            }
-        }
-
-        private async void Button4_Click(object sender, RoutedEventArgs e)
-        {
-            OpenFileDialog openFileDialog = new OpenFileDialog
-            {
-                Filter = "CSV Files (*.csv)|*.csv"
-            };
-            if (openFileDialog.ShowDialog() == true)
-            {
-                string csvPath = openFileDialog.FileName;
-                Logger.Log(LogLevel.INFO, "User selected CSV file for segment scan", context: "Button4_Click", additionalInfo: csvPath);
-
-                var segments = File.ReadAllLines(csvPath).Select(line => line.Trim()).ToList();
-                foreach (var segment in segments)
-                {
-                    if (IsValidIPSegment(segment))
-                    {
+                        Logger.Log(LogLevel.INFO, "User input IP segment", context: "OpenInputWindowButton_Click", additionalInfo: input);
                         for (int i = 0; i < 256; i++)
                         {
-                            string ip = $"{segment}.{i}";
+                            string ip = $"{input}.{i}";
                             await ProcessIPAsync(ip);
                         }
                     }
                     else
                     {
-                        HighlightInvalidInput(segment);
+                        Logger.Log(LogLevel.WARNING, "Invalid input", context: "OpenInputWindowButton_Click", additionalInfo: input);
+                        HighlightInvalidInput(input);
                     }
                 }
             }
+        }
+
+        private async Task ProcessCSV(string path, bool isSegment)
+        {
+            var lines = File.ReadAllLines(path).Select(line => line.Trim()).ToList();
+            foreach (var line in lines)
+            {
+                if (isSegment)
+                {
+                    if (IsValidIPSegment(line))
+                    {
+                        for (int i = 0; i < 256; i++)
+                        {
+                            string ip = $"{line}.{i}";
+                            await ProcessIPAsync(ip);
+                        }
+                    }
+                    else
+                    {
+                        HighlightInvalidInput(line);
+                    }
+                }
+                else
+                {
+                    if (IsValidIP(line))
+                    {
+                        await ProcessIPAsync(line);
+                    }
+                    else
+                    {
+                        HighlightInvalidInput(line);
+                    }
+                }
+            }
+        }
+
+        private bool IsCSVFile(string path)
+        {
+            return Path.GetExtension(path).Equals(".csv", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task ProcessIPAsync(string ip)
@@ -287,7 +258,6 @@ namespace IPProcessingTool
             }
         }
 
-
         private void AddScanStatus(ScanStatus scanStatus)
         {
             Dispatcher.Invoke(() =>
@@ -340,20 +310,14 @@ namespace IPProcessingTool
 
         private void SaveOutput(string ip, string hostname, string lastLoggedUser, string machineType, string machineSKU, string installedCoreSoftware, string ramSize, string windowsVersion, string windowsRelease, string date, string time, string status, string errorDetails)
         {
+            EnsureCsvFile();
+
             var newLine = $"\"{ip}\",\"{hostname}\",\"{lastLoggedUser}\",\"{machineType}\",\"{machineSKU}\",\"{installedCoreSoftware}\",\"{ramSize}\",\"{windowsVersion} ({windowsRelease})\",\"{date}\",\"{time}\",\"{status}\",\"{errorDetails}\"";
             try
             {
-                if (!IsFileLocked(outputFilePath))
+                using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
                 {
-                    using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
-                    {
-                        writer.WriteLine(newLine);
-                    }
-                }
-                else
-                {
-                    Logger.Log(LogLevel.ERROR, $"The file {outputFilePath} is currently in use by another process and cannot be accessed.", context: "SaveOutput");
-                    MessageBox.Show($"The file {outputFilePath} is currently in use by another process and cannot be accessed.", "File Locked", MessageBoxButton.OK, MessageBoxImage.Error);
+                    writer.WriteLine(newLine);
                 }
             }
             catch (IOException ioEx)
@@ -368,34 +332,25 @@ namespace IPProcessingTool
             }
         }
 
+
         private void EnsureCsvFile()
         {
             try
             {
+                var expectedHeader = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"MachineSKU\",\"InstalledCoreSoftware\",\"RAMSize\",\"WindowsVersion\",\"WindowsBuild\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
+
                 if (!File.Exists(outputFilePath))
                 {
-                    var header = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"MachineSKU\",\"InstalledCoreSoftware\",\"RAMSize\",\"WindowsVersion\",\"WindowsBuild\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
-                    if (!IsFileLocked(outputFilePath))
+                    using (var writer = new StreamWriter(outputFilePath, false, Encoding.UTF8))
                     {
-                        using (var writer = new StreamWriter(outputFilePath, false, Encoding.UTF8))
-                        {
-                            writer.WriteLine(header);
-                        }
-                    }
-                    else
-                    {
-                        Logger.Log(LogLevel.ERROR, $"The file {outputFilePath} is currently in use by another process and cannot be accessed.", context: "EnsureCsvFile");
-                        MessageBox.Show($"The file {outputFilePath} is currently in use by another process and cannot be accessed.", "File Locked", MessageBoxButton.OK, MessageBoxImage.Error);
+                        writer.WriteLine(expectedHeader);
                     }
                 }
                 else
                 {
-                    // Check if header exists
-                    var headerLine = File.ReadLines(outputFilePath).FirstOrDefault();
-                    var expectedHeader = "\"IP\",\"Hostname\",\"LastLoggedUser\",\"MachineType\",\"MachineSKU\",\"InstalledCoreSoftware\",\"RAMSize\",\"WindowsVersion\",\"WindowsBuild\",\"Date\",\"Time\",\"Status\",\"ErrorDetails\"";
-                    if (headerLine != expectedHeader)
+                    var lines = File.ReadAllLines(outputFilePath).ToList();
+                    if (lines.Count == 0 || !lines[0].Contains("IP"))
                     {
-                        var lines = File.ReadAllLines(outputFilePath).ToList();
                         lines.Insert(0, expectedHeader);
                         File.WriteAllLines(outputFilePath, lines);
                     }
@@ -412,7 +367,6 @@ namespace IPProcessingTool
                 MessageBox.Show($"Exception while ensuring file {outputFilePath}: {ex.Message}", "File Access Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
 
         private bool IsFileLocked(string filePath)
         {
