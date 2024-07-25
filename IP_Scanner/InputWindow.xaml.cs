@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -54,17 +55,31 @@ namespace IPProcessingTool
             return input;
         }
 
+        private void AddButton_Click(object sender, RoutedEventArgs e)
+        {
+            string input = InputTextBox.Text.Trim();
+            if (isSegment ? IsValidIPSegment(input) : IsValidIP(input))
+            {
+                IPListTextBox.AppendText(input + Environment.NewLine);
+                InputTextBox.Clear();
+            }
+            else
+            {
+                MessageBox.Show("Invalid IP address or segment.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void Submit_Click(object sender, RoutedEventArgs e)
         {
-            if (isSegment ? IsValidIPSegment(InputTextBox.Text) : IsValidIP(InputTextBox.Text))
+            InputText = IPListTextBox.Text.Trim();
+            if (!string.IsNullOrEmpty(InputText))
             {
-                InputText = InputTextBox.Text;
                 DialogResult = true;
                 Close();
             }
             else
             {
-                MessageBox.Show("Invalid input. Please enter a valid IP address or segment.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show("No IPs added. Please enter at least one IP address or segment.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
