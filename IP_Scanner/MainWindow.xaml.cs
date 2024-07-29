@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -62,19 +63,31 @@ namespace IPProcessingTool
                 Logger.Log(LogLevel.INFO, "User selected CSV file", context: "Button2_Click", additionalInfo: csvPath);
 
                 var ips = File.ReadAllLines(csvPath).Select(line => line.Trim()).ToList();
+                var tasks = new List<Task>();
+
                 foreach (var ip in ips)
                 {
                     if (IsValidIP(ip))
                     {
-                        await ProcessIPAsync(ip);
+                        tasks.Add(ProcessIPAsync(ip));
                     }
                     else
                     {
                         HighlightInvalidInput(ip);
                     }
                 }
+
+                try
+                {
+                    await Task.WhenAll(tasks);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log(LogLevel.ERROR, "Error processing IPs from CSV", context: "Button2_Click", additionalInfo: ex.Message);
+                }
             }
         }
+
 
         private async void Button3_Click(object sender, RoutedEventArgs e)
         {
@@ -87,18 +100,17 @@ namespace IPProcessingTool
                     Logger.Log(LogLevel.INFO, "User input IP segment", context: "Button3_Click", additionalInfo: segment);
 
                     cancellationTokenSource = new CancellationTokenSource();
+                    var tasks = new List<Task>();
+
                     try
                     {
                         for (int i = 0; i < 256; i++)
                         {
                             string ip = $"{segment}.{i}";
-                            await ProcessIPAsync(ip, cancellationTokenSource.Token);
-                            if (cancellationTokenSource.Token.IsCancellationRequested)
-                            {
-                                Logger.Log(LogLevel.INFO, "Scanning stopped by user", context: "Button3_Click");
-                                break;
-                            }
+                            tasks.Add(ProcessIPAsync(ip, cancellationTokenSource.Token));
                         }
+
+                        await Task.WhenAll(tasks);
                     }
                     catch (OperationCanceledException)
                     {
@@ -107,6 +119,7 @@ namespace IPProcessingTool
                     finally
                     {
                         cancellationTokenSource.Dispose();
+                        Logger.Log(LogLevel.INFO, "All tasks completed", context: "Button3_Click");
                     }
                 }
                 else
@@ -116,6 +129,7 @@ namespace IPProcessingTool
                 }
             }
         }
+
 
         private async void Button4_Click(object sender, RoutedEventArgs e)
         {
@@ -129,6 +143,8 @@ namespace IPProcessingTool
                 Logger.Log(LogLevel.INFO, "User selected CSV file for segment scan", context: "Button4_Click", additionalInfo: csvPath);
 
                 var segments = File.ReadAllLines(csvPath).Select(line => line.Trim()).ToList();
+                var tasks = new List<Task>();
+
                 foreach (var segment in segments)
                 {
                     if (IsValidIPSegment(segment))
@@ -136,7 +152,7 @@ namespace IPProcessingTool
                         for (int i = 0; i < 256; i++)
                         {
                             string ip = $"{segment}.{i}";
-                            await ProcessIPAsync(ip);
+                            tasks.Add(ProcessIPAsync(ip));
                         }
                     }
                     else
@@ -144,8 +160,18 @@ namespace IPProcessingTool
                         HighlightInvalidInput(segment);
                     }
                 }
+
+                try
+                {
+                    await Task.WhenAll(tasks);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log(LogLevel.ERROR, "Error processing IP segments from CSV", context: "Button4_Click", additionalInfo: ex.Message);
+                }
             }
         }
+
 
         private async Task ProcessIPAsync(string ip, CancellationToken cancellationToken = default)
         {
