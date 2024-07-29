@@ -6,6 +6,7 @@ using System.Management;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Win32;
@@ -16,6 +17,7 @@ namespace IPProcessingTool
     {
         private string outputFilePath;
         public ObservableCollection<ScanStatus> ScanStatuses { get; set; }
+        private CancellationTokenSource cancellationTokenSource;
 
         public MainWindow()
         {
@@ -84,10 +86,27 @@ namespace IPProcessingTool
                 {
                     Logger.Log(LogLevel.INFO, "User input IP segment", context: "Button3_Click", additionalInfo: segment);
 
-                    for (int i = 0; i < 256; i++)
+                    cancellationTokenSource = new CancellationTokenSource();
+                    try
                     {
-                        string ip = $"{segment}.{i}";
-                        await ProcessIPAsync(ip);
+                        for (int i = 0; i < 256; i++)
+                        {
+                            string ip = $"{segment}.{i}";
+                            await ProcessIPAsync(ip, cancellationTokenSource.Token);
+                            if (cancellationTokenSource.Token.IsCancellationRequested)
+                            {
+                                Logger.Log(LogLevel.INFO, "Scanning stopped by user", context: "Button3_Click");
+                                break;
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        Logger.Log(LogLevel.INFO, "Operation canceled", context: "Button3_Click");
+                    }
+                    finally
+                    {
+                        cancellationTokenSource.Dispose();
                     }
                 }
                 else
@@ -128,7 +147,7 @@ namespace IPProcessingTool
             }
         }
 
-        private async Task ProcessIPAsync(string ip)
+        private async Task ProcessIPAsync(string ip, CancellationToken cancellationToken = default)
         {
             var scanStatus = new ScanStatus { IPAddress = ip, Status = "Processing", Details = "", MachineSKU = "", InstalledCoreSoftware = "", RAMSize = "" };
             AddScanStatus(scanStatus);
@@ -150,112 +169,129 @@ namespace IPProcessingTool
 
             Logger.Log(LogLevel.INFO, "Started processing IP", context: "ProcessIPAsync", additionalInfo: ip);
 
-            await Task.Run(() =>
+            try
             {
-                if (PingHost(ip))
+                await Task.Run(() =>
                 {
-                    try
+                    if (PingHost(ip))
                     {
-                        ConnectionOptions options = new ConnectionOptions
+                        try
                         {
-                            Impersonation = ImpersonationLevel.Impersonate,
-                            EnablePrivileges = true,
-                            Authentication = AuthenticationLevel.PacketPrivacy
-                        };
-
-                        ManagementScope scope = new ManagementScope($"\\\\{ip}\\root\\cimv2", options);
-                        scope.Connect();
-
-                        var machineQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystem");
-                        var machineSearcher = new ManagementObjectSearcher(scope, machineQuery);
-                        var machine = machineSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
-                        if (machine != null)
-                        {
-                            hostname = machine["Name"]?.ToString();
-                            machineType = machine["Model"]?.ToString();
-
-                            var skuQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystemProduct");
-                            var skuSearcher = new ManagementObjectSearcher(scope, skuQuery);
-                            var sku = skuSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
-                            if (sku != null)
+                            ConnectionOptions options = new ConnectionOptions
                             {
-                                machineSKU = sku["Version"]?.ToString();
-                            }
+                                Impersonation = ImpersonationLevel.Impersonate,
+                                EnablePrivileges = true,
+                                Authentication = AuthenticationLevel.PacketPrivacy
+                            };
 
-                            var userQuery = new ObjectQuery("SELECT * FROM Win32_NetworkLoginProfile");
-                            var userSearcher = new ManagementObjectSearcher(scope, userQuery);
-                            var user = userSearcher.Get().Cast<ManagementObject>().OrderByDescending(u => u["LastLogon"]).FirstOrDefault();
-                            if (user != null)
+                            ManagementScope scope = new ManagementScope($"\\\\{ip}\\root\\cimv2", options);
+                            scope.Connect();
+
+                            var machineQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystem");
+                            var machineSearcher = new ManagementObjectSearcher(scope, machineQuery);
+                            var machine = machineSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
+                            if (machine != null)
                             {
-                                lastLoggedUser = user["Name"]?.ToString();
+                                hostname = machine["Name"]?.ToString();
+                                machineType = machine["Model"]?.ToString();
+
+                                var skuQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystemProduct");
+                                var skuSearcher = new ManagementObjectSearcher(scope, skuQuery);
+                                var sku = skuSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
+                                if (sku != null)
+                                {
+                                    machineSKU = sku["Version"]?.ToString();
+                                }
+
+                                var userQuery = new ObjectQuery("SELECT * FROM Win32_NetworkLoginProfile");
+                                var userSearcher = new ManagementObjectSearcher(scope, userQuery);
+                                var user = userSearcher.Get().Cast<ManagementObject>().OrderByDescending(u => u["LastLogon"]).FirstOrDefault();
+                                if (user != null)
+                                {
+                                    lastLoggedUser = user["Name"]?.ToString();
+                                }
+
+                                // Fetch installed core software
+                                var softwareQuery = new ObjectQuery("SELECT * FROM Win32_Product WHERE Name LIKE 'Core%'");
+                                var softwareSearcher = new ManagementObjectSearcher(scope, softwareQuery);
+                                var softwareList = softwareSearcher.Get().Cast<ManagementObject>().Select(soft => soft["Name"].ToString());
+                                installedCoreSoftware = string.Join(", ", softwareList);
+
+                                // Fetch RAM size
+                                var ramQuery = new ObjectQuery("SELECT * FROM Win32_PhysicalMemory");
+                                var ramSearcher = new ManagementObjectSearcher(scope, ramQuery);
+                                var totalRam = ramSearcher.Get().Cast<ManagementObject>().Sum(ram => Convert.ToDouble(ram["Capacity"]));
+                                ramSize = $"{totalRam / (1024 * 1024 * 1024)} GB";
+
+                                // Fetch Windows version and release
+                                var osQuery = new ObjectQuery("SELECT * FROM Win32_OperatingSystem");
+                                var osSearcher = new ManagementObjectSearcher(scope, osQuery);
+                                var os = osSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
+                                if (os != null)
+                                {
+                                    windowsVersion = os["Caption"]?.ToString();
+                                    windowsRelease = MapWindowsRelease(os["BuildNumber"]?.ToString());
+                                }
+
+                                status = "Complete";
                             }
-
-                            // Fetch installed core software
-                            var softwareQuery = new ObjectQuery("SELECT * FROM Win32_Product WHERE Name LIKE 'Core%'");
-                            var softwareSearcher = new ManagementObjectSearcher(scope, softwareQuery);
-                            var softwareList = softwareSearcher.Get().Cast<ManagementObject>().Select(soft => soft["Name"].ToString());
-                            installedCoreSoftware = string.Join(", ", softwareList);
-
-                            // Fetch RAM size
-                            var ramQuery = new ObjectQuery("SELECT * FROM Win32_PhysicalMemory");
-                            var ramSearcher = new ManagementObjectSearcher(scope, ramQuery);
-                            var totalRam = ramSearcher.Get().Cast<ManagementObject>().Sum(ram => Convert.ToDouble(ram["Capacity"]));
-                            ramSize = $"{totalRam / (1024 * 1024 * 1024)} GB";
-
-                            // Fetch Windows version and release
-                            var osQuery = new ObjectQuery("SELECT * FROM Win32_OperatingSystem");
-                            var osSearcher = new ManagementObjectSearcher(scope, osQuery);
-                            var os = osSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
-                            if (os != null)
+                            else
                             {
-                                windowsVersion = os["Caption"]?.ToString();
-                                windowsRelease = MapWindowsRelease(os["BuildNumber"]?.ToString());
+                                status = "WMI Error";
+                                errorDetails = "Machine information not found.";
                             }
-
-                            status = "Complete";
                         }
-                        else
+                        catch (ManagementException ex)
                         {
                             status = "WMI Error";
-                            errorDetails = "Machine information not found.";
+                            errorDetails = ex.Message;
+                            Logger.Log(LogLevel.ERROR, $"WMI ManagementException for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
+                        }
+                        catch (UnauthorizedAccessException ex)
+                        {
+                            status = "Access denied";
+                            errorDetails = "Access denied when attempting to connect to " + ip;
+                            Logger.Log(LogLevel.ERROR, $"UnauthorizedAccessException for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
+                        }
+                        catch (Exception ex)
+                        {
+                            status = "Unknown error";
+                            errorDetails = ex.Message;
+                            Logger.Log(LogLevel.ERROR, $"Exception for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
                         }
                     }
-                    catch (ManagementException ex)
+                    else
                     {
-                        status = "WMI Error";
-                        errorDetails = ex.Message;
-                        Logger.Log(LogLevel.ERROR, $"WMI ManagementException for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
+                        errorDetails = "Host not reachable";
+                        Logger.Log(LogLevel.WARNING, $"Host not reachable for IP {ip}", context: "ProcessIPAsync");
                     }
-                    catch (UnauthorizedAccessException ex)
-                    {
-                        status = "Access denied";
-                        errorDetails = "Access denied when attempting to connect to " + ip;
-                        Logger.Log(LogLevel.ERROR, $"UnauthorizedAccessException for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
-                    }
-                    catch (Exception ex)
-                    {
-                        status = "Unknown error";
-                        errorDetails = ex.Message;
-                        Logger.Log(LogLevel.ERROR, $"Exception for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
-                    }
-                }
-                else
-                {
-                    errorDetails = "Host not reachable";
-                    Logger.Log(LogLevel.WARNING, $"Host not reachable for IP {ip}", context: "ProcessIPAsync");
-                }
-            });
 
-            scanStatus.Status = status;
-            scanStatus.Details = errorDetails;
-            scanStatus.MachineSKU = machineSKU;
-            scanStatus.InstalledCoreSoftware = installedCoreSoftware;
-            scanStatus.RAMSize = ramSize;
-            SaveOutput(ip, hostname, lastLoggedUser, machineType, machineSKU, installedCoreSoftware, ramSize, windowsVersion, windowsRelease, date, time, status, errorDetails);
-            UpdateScanStatus(scanStatus);
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        Logger.Log(LogLevel.INFO, "Cancellation requested", context: "ProcessIPAsync");
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+                }, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.Log(LogLevel.INFO, "Operation was canceled", context: "ProcessIPAsync");
+                status = "Canceled";
+                errorDetails = "Operation canceled by user";
+            }
+            finally
+            {
+                scanStatus.Status = status;
+                scanStatus.Details = errorDetails;
+                scanStatus.MachineSKU = machineSKU;
+                scanStatus.InstalledCoreSoftware = installedCoreSoftware;
+                scanStatus.RAMSize = ramSize;
+                SaveOutput(ip, hostname, lastLoggedUser, machineType, machineSKU, installedCoreSoftware, ramSize, windowsVersion, windowsRelease, date, time, status, errorDetails);
+                UpdateScanStatus(scanStatus);
+                UpdateStatusBar("Completed processing IP: " + ip);
+            }
 
             Logger.Log(LogLevel.INFO, $"Processed IP {ip}", context: "ProcessIPAsync", additionalInfo: $"Status: {status}, Details: {errorDetails}");
-            UpdateStatusBar("Completed processing IP: " + ip);
         }
 
         private string MapWindowsRelease(string buildNumber)
@@ -287,6 +323,14 @@ namespace IPProcessingTool
             }
         }
 
+        private void StopButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (cancellationTokenSource != null)
+            {
+                cancellationTokenSource.Cancel();
+                UpdateStatusBar("Scanning stopped by user.");
+            }
+        }
 
         private void AddScanStatus(ScanStatus scanStatus)
         {
@@ -412,7 +456,6 @@ namespace IPProcessingTool
                 MessageBox.Show($"Exception while ensuring file {outputFilePath}: {ex.Message}", "File Access Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
 
         private bool IsFileLocked(string filePath)
         {
