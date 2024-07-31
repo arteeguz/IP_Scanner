@@ -21,8 +21,10 @@ namespace IPProcessingTool
         public ObservableCollection<ScanStatus> ScanStatuses { get; set; }
         private CancellationTokenSource cancellationTokenSource;
         private ParallelOptions parallelOptions;
-        private ObservableCollection<ColumnSetting> columnSettings;
-        private int pingTimeout = 1000; // Configurable ping timeout in milliseconds
+        private ObservableCollection<ColumnSetting> gridColumnSettings;
+        private ObservableCollection<ColumnSetting> outputColumnSettings;
+        private bool autoSave;
+        private int pingTimeout = 1000; // Default value
         private int totalIPs;
         private int processedIPs;
 
@@ -37,6 +39,10 @@ namespace IPProcessingTool
                 MaxDegreeOfParallelism = Environment.ProcessorCount
             };
 
+            gridColumnSettings = new ObservableCollection<ColumnSetting>();
+            outputColumnSettings = new ObservableCollection<ColumnSetting>();
+            autoSave = false; // Default value
+
             InitializeColumnSettings();
             UpdateDataGridColumns();
 
@@ -45,28 +51,24 @@ namespace IPProcessingTool
 
         private void InitializeColumnSettings()
         {
-            columnSettings = new ObservableCollection<ColumnSetting>
+            var columns = new[]
             {
-                new ColumnSetting { Name = "IP Address", IsSelected = true },
-                new ColumnSetting { Name = "Hostname", IsSelected = true },
-                new ColumnSetting { Name = "Last Logged User", IsSelected = true },
-                new ColumnSetting { Name = "Machine Type", IsSelected = true },
-                new ColumnSetting { Name = "Machine SKU", IsSelected = true },
-                new ColumnSetting { Name = "Installed Core Software", IsSelected = true },
-                new ColumnSetting { Name = "RAM Size", IsSelected = true },
-                new ColumnSetting { Name = "Windows Version", IsSelected = true },
-                new ColumnSetting { Name = "Windows Release", IsSelected = true },
-                new ColumnSetting { Name = "Date", IsSelected = true },
-                new ColumnSetting { Name = "Time", IsSelected = true },
-                new ColumnSetting { Name = "Status", IsSelected = true },
-                new ColumnSetting { Name = "Details", IsSelected = true }
+                "IP Address", "Hostname", "Last Logged User", "Machine Type", "Machine SKU",
+                "Installed Core Software", "RAM Size", "Windows Version", "Windows Release",
+                "Date", "Time", "Status", "Details"
             };
+
+            foreach (var column in columns)
+            {
+                gridColumnSettings.Add(new ColumnSetting { Name = column, IsSelected = true });
+                outputColumnSettings.Add(new ColumnSetting { Name = column, IsSelected = true });
+            }
         }
 
         private void UpdateDataGridColumns()
         {
             StatusDataGrid.Columns.Clear();
-            foreach (var column in columnSettings.Where(c => c.IsSelected))
+            foreach (var column in gridColumnSettings.Where(c => c.IsSelected))
             {
                 StatusDataGrid.Columns.Add(new DataGridTextColumn
                 {
@@ -78,10 +80,15 @@ namespace IPProcessingTool
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            var settingsWindow = new Settings(columnSettings);
+            var settingsWindow = new Settings(gridColumnSettings, outputColumnSettings, autoSave, pingTimeout, parallelOptions.MaxDegreeOfParallelism);
             if (settingsWindow.ShowDialog() == true)
             {
-                columnSettings = settingsWindow.Columns;
+                gridColumnSettings = new ObservableCollection<ColumnSetting>(settingsWindow.GridColumns);
+                outputColumnSettings = new ObservableCollection<ColumnSetting>(settingsWindow.OutputColumns);
+                autoSave = settingsWindow.AutoSave;
+                pingTimeout = settingsWindow.PingTimeout;
+                parallelOptions.MaxDegreeOfParallelism = settingsWindow.MaxConcurrentScans;
+
                 UpdateDataGridColumns();
             }
         }
@@ -96,7 +103,6 @@ namespace IPProcessingTool
                 {
                     Logger.Log(LogLevel.INFO, "User input IP address", context: "Button1_Click", additionalInfo: ip);
                     await ProcessIPsAsync(new[] { ip });
-                    ShowSavePrompt();
                 }
                 else
                 {
@@ -186,8 +192,7 @@ namespace IPProcessingTool
                         HighlightInvalidInput(ip);
                     }
 
-                    // Limit concurrent tasks to avoid overwhelming the system
-                    if (tasks.Count >= Environment.ProcessorCount)
+                    if (tasks.Count >= parallelOptions.MaxDegreeOfParallelism)
                     {
                         await Task.WhenAny(tasks);
                         tasks.RemoveAll(t => t.IsCompleted);
@@ -206,7 +211,7 @@ namespace IPProcessingTool
                 EnableButtons();
                 UpdateStatusBar("Completed processing all IPs.");
                 UpdateProgressBar(100);
-                ShowSavePrompt();
+                HandleAutoSave();
             }
         }
 
@@ -512,6 +517,18 @@ namespace IPProcessingTool
             }
         }
 
+        private void HandleAutoSave()
+        {
+            if (autoSave)
+            {
+                SaveOutputFile();
+            }
+            else
+            {
+                ShowSavePrompt();
+            }
+        }
+
         private void ShowSavePrompt()
         {
             var result = MessageBox.Show("IP scanning is finished. Would you like to save the output?", "Save Results", MessageBoxButton.YesNo, MessageBoxImage.Question);
@@ -566,14 +583,14 @@ namespace IPProcessingTool
                 using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
                 {
                     // Write header
-                    writer.WriteLine(string.Join(",", columnSettings.Select(c => $"\"{c.Name}\"")));
+                    writer.WriteLine(string.Join(",", outputColumnSettings.Where(c => c.IsSelected).Select(c => $"\"{c.Name}\"")));
 
                     foreach (var scanStatus in ScanStatuses)
                     {
-                        var line = string.Join(",", columnSettings.Select(c =>
+                        var line = string.Join(",", outputColumnSettings.Where(c => c.IsSelected).Select(c =>
                         {
                             var value = GetPropertyValue(scanStatus, c.Name.Replace(" ", ""));
-                            return $"\"{(c.IsSelected ? value : "Not Selected")}\"";
+                            return $"\"{value}\"";
                         }));
                         writer.WriteLine(line);
                     }
@@ -599,7 +616,7 @@ namespace IPProcessingTool
             {
                 if (!File.Exists(outputFilePath))
                 {
-                    var header = string.Join(",", columnSettings.Select(c => $"\"{c.Name}\""));
+                    var header = string.Join(",", outputColumnSettings.Where(c => c.IsSelected).Select(c => $"\"{c.Name}\""));
                     File.WriteAllText(outputFilePath, header + Environment.NewLine);
                 }
             }
