@@ -63,19 +63,54 @@ namespace IPProcessingTool
 
         private void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            int caretIndex = InputTextBox.CaretIndex;
             string input = InputTextBox.Text;
+            int caretIndex = InputTextBox.CaretIndex;
 
             // Only format if we're adding characters, not deleting
             if (e.Changes.Any(change => change.AddedLength > 0))
             {
-                input = FormatInputWithDots(input);
+                (input, caretIndex) = FormatInputWithDots(input, caretIndex);
             }
 
             InputTextBox.Text = input;
-            SetCaretIndex(caretIndex, input);
+            InputTextBox.CaretIndex = caretIndex;
 
             ValidateInput();
+        }
+
+        private (string formattedInput, int newCaretIndex) FormatInputWithDots(string input, int caretIndex)
+        {
+            string[] parts = input.Split('.');
+            string formattedInput = "";
+            int newCaretIndex = caretIndex;
+            int maxParts = isSegment ? 3 : 4;
+
+            for (int i = 0; i < parts.Length && i < maxParts; i++)
+            {
+                if (parts[i].Length > 3)
+                {
+                    parts[i] = parts[i].Substring(0, 3);
+                }
+
+                int oldLength = formattedInput.Length;
+                formattedInput += parts[i];
+
+                if (i < maxParts - 1 && (parts[i].Length == 3 || i < parts.Length - 1))
+                {
+                    formattedInput += ".";
+                }
+
+                // Adjust caret index if a dot was added
+                if (caretIndex > oldLength && formattedInput.Length > oldLength + parts[i].Length)
+                {
+                    newCaretIndex++;
+                }
+            }
+
+            // Ensure caret doesn't go beyond the end of the input
+            newCaretIndex = Math.Min(newCaretIndex, formattedInput.Length);
+
+            return (formattedInput, newCaretIndex);
         }
 
         private void InputTextBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
@@ -89,38 +124,6 @@ namespace IPProcessingTool
             {
                 e.Handled = true;
             }
-        }
-
-        private string FormatInputWithDots(string input)
-        {
-            string[] parts = input.Split('.');
-            string formattedInput = "";
-            int maxParts = isSegment ? 3 : 4;
-
-            for (int i = 0; i < parts.Length && i < maxParts; i++)
-            {
-                if (parts[i].Length > 3)
-                {
-                    parts[i] = parts[i].Substring(0, 3);
-                }
-                formattedInput += parts[i];
-
-                if (i < maxParts - 1 && (parts[i].Length == 3 || i < parts.Length - 1))
-                {
-                    formattedInput += ".";
-                }
-            }
-
-            return formattedInput;
-        }
-
-        private void SetCaretIndex(int oldIndex, string newText)
-        {
-            // Calculate how many characters were added
-            int diff = newText.Length - InputTextBox.Text.Length;
-
-            // Set new caret position
-            InputTextBox.CaretIndex = Math.Min(oldIndex + diff, newText.Length);
         }
 
         private void ValidateInput()
