@@ -32,6 +32,7 @@ namespace IPProcessingTool
         {
             InitializeComponent();
             ScanStatuses = new ObservableCollection<ScanStatus>();
+            DataContext = this;
             StatusDataGrid.ItemsSource = ScanStatuses;
 
             parallelOptions = new ParallelOptions
@@ -55,7 +56,7 @@ namespace IPProcessingTool
             {
                 "IP Address", "Hostname", "Last Logged User", "Machine Type", "Machine SKU",
                 "Installed Core Software", "RAM Size", "Windows Version", "Windows Release",
-                "Date", "Time", "Status", "Details"
+                "Office Version", "Date", "Time", "Status", "Details"
             };
 
             foreach (var column in columns)
@@ -174,43 +175,40 @@ namespace IPProcessingTool
             DisableButtons();
 
             cancellationTokenSource = new CancellationTokenSource();
-            var tasks = new List<Task>();
 
             try
             {
-                foreach (var ip in ips)
+                await Task.Run(async () =>
                 {
-                    if (cancellationTokenSource.IsCancellationRequested)
-                        break;
-
-                    if (IsValidIP(ip))
+                    foreach (var ip in ips)
                     {
-                        tasks.Add(ProcessIPAsync(ip, cancellationTokenSource.Token));
-                    }
-                    else
-                    {
-                        HighlightInvalidInput(ip);
-                    }
+                        if (cancellationTokenSource.IsCancellationRequested)
+                            break;
 
-                    if (tasks.Count >= parallelOptions.MaxDegreeOfParallelism)
-                    {
-                        await Task.WhenAny(tasks);
-                        tasks.RemoveAll(t => t.IsCompleted);
+                        if (IsValidIP(ip))
+                        {
+                            await ProcessIPAsync(ip, cancellationTokenSource.Token);
+                        }
+                        else
+                        {
+                            HighlightInvalidInput(ip);
+                        }
                     }
-                }
-
-                await Task.WhenAll(tasks);
+                }, cancellationTokenSource.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                UpdateStatusBar("Scan cancelled by user.");
             }
             catch (Exception ex)
             {
-                Logger.Log(LogLevel.ERROR, "Error processing IPs", context: "ProcessIPsAsync", additionalInfo: ex.Message);
-                MessageBox.Show($"An error occurred while processing IPs: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                UpdateStatusBar($"Error during scan: {ex.Message}");
+                Logger.Log(LogLevel.ERROR, "Error during scan", context: "ProcessIPsAsync", additionalInfo: ex.Message);
             }
             finally
             {
                 EnableButtons();
-                UpdateStatusBar("Completed processing all IPs.");
-                UpdateProgressBar(100);
+                UpdateStatusBar("Scan completed.");
                 HandleAutoSave();
             }
         }
@@ -226,7 +224,7 @@ namespace IPProcessingTool
                 Time = DateTime.Now.ToString("HH:mm")
             };
 
-            await Dispatcher.InvokeAsync(() => AddScanStatus(scanStatus));
+                await Dispatcher.InvokeAsync(() => AddScanStatus(scanStatus));
 
             try
             {
@@ -261,6 +259,9 @@ namespace IPProcessingTool
                             if (cancellationToken.IsCancellationRequested) return;
 
                             await FetchOSInfoAsync(scope, scanStatus, cancellationToken);
+                            if (cancellationToken.IsCancellationRequested) return;
+
+                            await FetchOfficeVersionAsync(scope, scanStatus, cancellationToken);
 
                             scanStatus.Status = "Complete";
                             scanStatus.Details = "N/A";
@@ -407,6 +408,43 @@ namespace IPProcessingTool
                         string buildNumber = os["BuildNumber"]?.ToString();
                         scanStatus.WindowsRelease = MapWindowsRelease(buildNumber);
                     }
+                }
+            }
+        }
+
+        private async Task FetchOfficeVersionAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+        {
+            if (outputColumnSettings.Any(c => c.Name == "Office Version" && c.IsSelected))
+            {
+                var officeQuery = new ObjectQuery("SELECT Name, Version FROM Win32_Product WHERE Name LIKE '%Microsoft Office%'");
+                var officeSearcher = new ManagementObjectSearcher(scope, officeQuery);
+                var officeProducts = await Task.Run(() => officeSearcher.Get().Cast<ManagementObject>().ToList(), cancellationToken);
+
+                if (officeProducts.Any())
+                {
+                    var latestOffice = officeProducts.OrderByDescending(p => p["Version"].ToString()).First();
+                    string officeName = latestOffice["Name"].ToString();
+                    string officeVersion = latestOffice["Version"].ToString();
+
+                    if (officeName.Contains("365"))
+                    {
+                        scanStatus.OfficeVersion = "Microsoft 365";
+                    }
+                    else
+                    {
+                        // Extract year from version number (e.g., 15.0 -> 2013, 16.0 -> 2016/2019/2021)
+                        string majorVersion = officeVersion.Split('.')[0];
+                        scanStatus.OfficeVersion = majorVersion switch
+                        {
+                            "15" => "Office 2013",
+                            "16" => "Office 2016/2019/2021",
+                            _ => $"Office (Version: {officeVersion})"
+                        };
+                    }
+                }
+                else
+                {
+                    scanStatus.OfficeVersion = "Not installed";
                 }
             }
         }
@@ -590,7 +628,7 @@ namespace IPProcessingTool
             }
         }
 
-        private void ShowSavePrompt()
+            private void ShowSavePrompt()
         {
             var result = MessageBox.Show("IP scanning is finished. Would you like to save the output?", "Save Results", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (result == MessageBoxResult.Yes)
@@ -700,6 +738,7 @@ namespace IPProcessingTool
         public string RAMSize { get; set; }
         public string WindowsVersion { get; set; }
         public string WindowsRelease { get; set; }
+        public string OfficeVersion { get; set; }
         public string Date { get; set; }
         public string Time { get; set; }
         public string Status { get; set; }
@@ -716,6 +755,7 @@ namespace IPProcessingTool
             RAMSize = "N/A";
             WindowsVersion = "N/A";
             WindowsRelease = "N/A";
+            OfficeVersion = "N/A";
             Date = DateTime.Now.ToString("M/dd/yyyy");
             Time = DateTime.Now.ToString("HH:mm");
             Status = "Not Started";

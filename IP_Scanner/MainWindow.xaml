@@ -75,7 +75,25 @@
                 Grid.Row="0" VerticalAlignment="Top" Margin="758,20,50,0" Height="30"/>
 
         <DataGrid Name="StatusDataGrid" Grid.Row="1" Margin="20,221,20,10" 
-                  AutoGenerateColumns="False" IsReadOnly="True" CanUserResizeColumns="True"/>
+                  AutoGenerateColumns="False" IsReadOnly="True" CanUserResizeColumns="True"
+                  ItemsSource="{Binding ScanStatuses}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="IP Address" Binding="{Binding IPAddress}"/>
+                <DataGridTextColumn Header="Hostname" Binding="{Binding Hostname}"/>
+                <DataGridTextColumn Header="Last Logged User" Binding="{Binding LastLoggedUser}"/>
+                <DataGridTextColumn Header="Machine Type" Binding="{Binding MachineType}"/>
+                <DataGridTextColumn Header="Machine SKU" Binding="{Binding MachineSKU}"/>
+                <DataGridTextColumn Header="Installed Core Software" Binding="{Binding InstalledCoreSoftware}"/>
+                <DataGridTextColumn Header="RAM Size" Binding="{Binding RAMSize}"/>
+                <DataGridTextColumn Header="Windows Version" Binding="{Binding WindowsVersion}"/>
+                <DataGridTextColumn Header="Windows Release" Binding="{Binding WindowsRelease}"/>
+                <DataGridTextColumn Header="Office Version" Binding="{Binding OfficeVersion}"/>
+                <DataGridTextColumn Header="Date" Binding="{Binding Date}"/>
+                <DataGridTextColumn Header="Time" Binding="{Binding Time}"/>
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}"/>
+                <DataGridTextColumn Header="Details" Binding="{Binding Details}"/>
+            </DataGrid.Columns>
+        </DataGrid>
 
         <ProgressBar Name="ProgressBar" Grid.Row="2" Height="20" Margin="10"/>
 
