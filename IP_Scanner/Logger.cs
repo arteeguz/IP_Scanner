@@ -5,7 +5,11 @@ namespace IPProcessingTool
 {
     public static class Logger
     {
+        // Current path (on Desktop)
         private static readonly string logFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "log.txt");
+
+        // Network drive path (commented out)
+        // private static readonly string logFilePath = @"\\netapp2b\DSS Interns\IP_Scanner\log.txt";
 
         public static void Log(LogLevel level, string message, string user = "System", string context = "", string additionalInfo = "")
         {
@@ -17,6 +21,7 @@ namespace IPProcessingTool
         {
             try
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(logFilePath));
                 using (var writer = new StreamWriter(logFilePath, true))
                 {
                     writer.WriteLine(logEntry);

@@ -225,114 +225,63 @@ namespace IPProcessingTool
                 Date = DateTime.Now.ToString("M/dd/yyyy"),
                 Time = DateTime.Now.ToString("HH:mm")
             };
-            AddScanStatus(scanStatus);
 
-            UpdateStatusBar($"Processing IP: {ip} ({processedIPs + 1}/{totalIPs})");
-
-            Logger.Log(LogLevel.INFO, "Started processing IP", context: "ProcessIPAsync", additionalInfo: ip);
+            await Dispatcher.InvokeAsync(() => AddScanStatus(scanStatus));
 
             try
             {
                 if (await PingHostAsync(ip, cancellationToken))
                 {
-                    try
+                    await Task.Run(async () =>
                     {
-                        ConnectionOptions options = new ConnectionOptions
+                        try
                         {
-                            Impersonation = ImpersonationLevel.Impersonate,
-                            EnablePrivileges = true,
-                            Authentication = AuthenticationLevel.PacketPrivacy
-                        };
-
-                        ManagementScope scope = new ManagementScope($"\\\\{ip}\\root\\cimv2", options);
-                        scope.Connect();
-
-                        var machineQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystem");
-                        var machineSearcher = new ManagementObjectSearcher(scope, machineQuery);
-                        var machine = machineSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
-                        if (machine != null)
-                        {
-                            scanStatus.Hostname = machine["Name"]?.ToString();
-                            scanStatus.MachineType = machine["Model"]?.ToString();
-
-                            var skuQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystemProduct");
-                            var skuSearcher = new ManagementObjectSearcher(scope, skuQuery);
-                            var sku = skuSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
-                            if (sku != null)
+                            ConnectionOptions options = new ConnectionOptions
                             {
-                                scanStatus.MachineSKU = sku["Version"]?.ToString();
-                            }
+                                Impersonation = ImpersonationLevel.Impersonate,
+                                EnablePrivileges = true,
+                                Authentication = AuthenticationLevel.PacketPrivacy
+                            };
 
-                            var userQuery = new ObjectQuery("SELECT UserName FROM Win32_ComputerSystem");
-                            var userSearcher = new ManagementObjectSearcher(scope, userQuery);
-                            var user = userSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
-                            if (user != null)
-                            {
-                                scanStatus.LastLoggedUser = user["UserName"]?.ToString();
-                            }
+                            ManagementScope scope = new ManagementScope($"\\\\{ip}\\root\\cimv2", options);
+                            await Task.Run(() => scope.Connect());
 
-                            var softwareQuery = new ObjectQuery("SELECT Name, Version FROM Win32_Product");
-                            var softwareSearcher = new ManagementObjectSearcher(scope, softwareQuery);
-                            var softwareList = softwareSearcher.Get().Cast<ManagementObject>()
-                                .Select(soft => $"{soft["Name"]} ({soft["Version"]})")
-                                .Take(10)
-                                .ToList();
-                            scanStatus.InstalledCoreSoftware = string.Join(", ", softwareList);
+                            if (cancellationToken.IsCancellationRequested) return;
 
-                            var ramQuery = new ObjectQuery("SELECT * FROM Win32_PhysicalMemory");
-                            var ramSearcher = new ManagementObjectSearcher(scope, ramQuery);
-                            var totalRam = ramSearcher.Get().Cast<ManagementObject>().Sum(ram => Convert.ToDouble(ram["Capacity"]));
-                            scanStatus.RAMSize = $"{totalRam / (1024 * 1024 * 1024):F2} GB";
+                            await FetchMachineInfoAsync(scope, scanStatus, cancellationToken);
+                            if (cancellationToken.IsCancellationRequested) return;
 
-                            var osQuery = new ObjectQuery("SELECT * FROM Win32_OperatingSystem");
-                            var osSearcher = new ManagementObjectSearcher(scope, osQuery);
-                            var os = osSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
-                            if (os != null)
-                            {
-                                scanStatus.WindowsVersion = os["Caption"]?.ToString();
-                                string buildNumber = os["BuildNumber"]?.ToString();
-                                scanStatus.WindowsRelease = MapWindowsRelease(buildNumber);
-                            }
+                            await FetchUserInfoAsync(scope, scanStatus, cancellationToken);
+                            if (cancellationToken.IsCancellationRequested) return;
+
+                            await FetchSoftwareInfoAsync(scope, scanStatus, cancellationToken);
+                            if (cancellationToken.IsCancellationRequested) return;
+
+                            await FetchRAMInfoAsync(scope, scanStatus, cancellationToken);
+                            if (cancellationToken.IsCancellationRequested) return;
+
+                            await FetchOSInfoAsync(scope, scanStatus, cancellationToken);
 
                             scanStatus.Status = "Complete";
                             scanStatus.Details = "N/A";
                         }
-                        else
+                        catch (Exception ex)
                         {
                             scanStatus.Status = "Error";
-                            scanStatus.Details = "Machine information not found";
+                            scanStatus.Details = $"WMI Error: {ex.Message}";
+                            Logger.Log(LogLevel.ERROR, $"WMI Exception for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
                         }
-                    }
-                    catch (ManagementException ex)
-                    {
-                        scanStatus.Status = "Error";
-                        scanStatus.Details = $"WMI Error: {ex.Message}";
-                        Logger.Log(LogLevel.ERROR, $"WMI ManagementException for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
-                    }
-                    catch (UnauthorizedAccessException ex)
-                    {
-                        scanStatus.Status = "Error";
-                        scanStatus.Details = $"Access denied: {ex.Message}";
-                        Logger.Log(LogLevel.ERROR, $"UnauthorizedAccessException for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
-                    }
-                    catch (Exception ex)
-                    {
-                        scanStatus.Status = "Error";
-                        scanStatus.Details = $"Unknown error: {ex.Message}";
-                        Logger.Log(LogLevel.ERROR, $"Exception for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
-                    }
+                        finally
+                        {
+                            await Dispatcher.InvokeAsync(() => UpdateScanStatus(scanStatus));
+                        }
+                    }, cancellationToken);
                 }
                 else
                 {
                     scanStatus.Status = "Not Reachable";
                     scanStatus.Details = "Host not reachable";
                     Logger.Log(LogLevel.WARNING, $"Host not reachable for IP {ip}", context: "ProcessIPAsync");
-                }
-
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    Logger.Log(LogLevel.INFO, "Cancellation requested", context: "ProcessIPAsync");
-                    cancellationToken.ThrowIfCancellationRequested();
                 }
             }
             catch (OperationCanceledException)
@@ -341,12 +290,124 @@ namespace IPProcessingTool
                 scanStatus.Details = "Operation canceled by user";
                 Logger.Log(LogLevel.INFO, "Operation was canceled", context: "ProcessIPAsync");
             }
+            catch (Exception ex)
+            {
+                scanStatus.Status = "Error";
+                scanStatus.Details = $"Unexpected error: {ex.Message}";
+                Logger.Log(LogLevel.ERROR, $"Unexpected exception for IP {ip}", context: "ProcessIPAsync", additionalInfo: ex.Message);
+            }
             finally
             {
-                processedIPs++;
-                UpdateProgressBar((int)((double)processedIPs / totalIPs * 100));
-                UpdateScanStatus(scanStatus);
-                UpdateStatusBar($"Completed processing IP: {ip} ({processedIPs}/{totalIPs})");
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    processedIPs++;
+                    UpdateProgressBar((int)((double)processedIPs / totalIPs * 100));
+                    UpdateScanStatus(scanStatus);
+                    UpdateStatusBar($"Completed processing IP: {ip} ({processedIPs}/{totalIPs})");
+                });
+            }
+        }
+
+        private async Task FetchMachineInfoAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+        {
+            if (outputColumnSettings.Any(c => c.Name == "Hostname" && c.IsSelected) ||
+                outputColumnSettings.Any(c => c.Name == "Machine Type" && c.IsSelected) ||
+                outputColumnSettings.Any(c => c.Name == "Machine SKU" && c.IsSelected))
+            {
+                var machineQuery = new ObjectQuery("SELECT Name, Model FROM Win32_ComputerSystem");
+                var machineSearcher = new ManagementObjectSearcher(scope, machineQuery);
+                var machine = await Task.Run(() => machineSearcher.Get().Cast<ManagementObject>().FirstOrDefault(), cancellationToken);
+
+                if (machine != null)
+                {
+                    if (outputColumnSettings.Any(c => c.Name == "Hostname" && c.IsSelected))
+                        scanStatus.Hostname = machine["Name"]?.ToString();
+
+                    if (outputColumnSettings.Any(c => c.Name == "Machine Type" && c.IsSelected))
+                        scanStatus.MachineType = machine["Model"]?.ToString();
+                }
+
+                if (outputColumnSettings.Any(c => c.Name == "Machine SKU" && c.IsSelected))
+                {
+                    var skuQuery = new ObjectQuery("SELECT Version FROM Win32_ComputerSystemProduct");
+                    var skuSearcher = new ManagementObjectSearcher(scope, skuQuery);
+                    var sku = await Task.Run(() => skuSearcher.Get().Cast<ManagementObject>().FirstOrDefault(), cancellationToken);
+
+                    if (sku != null)
+                    {
+                        scanStatus.MachineSKU = sku["Version"]?.ToString();
+                    }
+                }
+            }
+        }
+
+        private async Task FetchUserInfoAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+        {
+            if (outputColumnSettings.Any(c => c.Name == "Last Logged User" && c.IsSelected))
+            {
+                var userQuery = new ObjectQuery("SELECT UserName FROM Win32_ComputerSystem");
+                var userSearcher = new ManagementObjectSearcher(scope, userQuery);
+                var user = await Task.Run(() => userSearcher.Get().Cast<ManagementObject>().FirstOrDefault(), cancellationToken);
+
+                if (user != null)
+                {
+                    scanStatus.LastLoggedUser = user["UserName"]?.ToString();
+                }
+            }
+        }
+
+        private async Task FetchSoftwareInfoAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+        {
+            if (outputColumnSettings.Any(c => c.Name == "Installed Core Software" && c.IsSelected))
+            {
+                var softwareQuery = new ObjectQuery("SELECT Name, Version FROM Win32_Product");
+                var softwareSearcher = new ManagementObjectSearcher(scope, softwareQuery);
+                var softwareList = await Task.Run(() =>
+                    softwareSearcher.Get().Cast<ManagementObject>()
+                        .Select(soft => $"{soft["Name"]} ({soft["Version"]})")
+                        .Take(10)
+                        .ToList(),
+                    cancellationToken);
+
+                scanStatus.InstalledCoreSoftware = string.Join(", ", softwareList);
+            }
+        }
+
+        private async Task FetchRAMInfoAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+        {
+            if (outputColumnSettings.Any(c => c.Name == "RAM Size" && c.IsSelected))
+            {
+                var ramQuery = new ObjectQuery("SELECT Capacity FROM Win32_PhysicalMemory");
+                var ramSearcher = new ManagementObjectSearcher(scope, ramQuery);
+                var totalRam = await Task.Run(() =>
+                    ramSearcher.Get().Cast<ManagementObject>()
+                        .Sum(ram => Convert.ToDouble(ram["Capacity"])),
+                    cancellationToken);
+
+                scanStatus.RAMSize = $"{totalRam / (1024 * 1024 * 1024):F2} GB";
+            }
+        }
+
+        private async Task FetchOSInfoAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+        {
+            if (outputColumnSettings.Any(c => c.Name == "Windows Version" && c.IsSelected) ||
+                outputColumnSettings.Any(c => c.Name == "Windows Release" && c.IsSelected))
+            {
+                var osQuery = new ObjectQuery("SELECT Caption, BuildNumber FROM Win32_OperatingSystem");
+                var osSearcher = new ManagementObjectSearcher(scope, osQuery);
+                var os = await Task.Run(() => osSearcher.Get().Cast<ManagementObject>().FirstOrDefault(), cancellationToken);
+
+                if (os != null)
+                {
+                    if (outputColumnSettings.Any(c => c.Name == "Windows Version" && c.IsSelected))
+                        scanStatus.WindowsVersion = os["Caption"]?.ToString();
+
+                    if (outputColumnSettings.Any(c => c.Name == "Windows Release" && c.IsSelected))
+                    {
+                        string buildNumber = os["BuildNumber"]?.ToString();
+                        scanStatus.WindowsRelease = MapWindowsRelease(buildNumber);
+                    }
+                }
             }
         }
 
