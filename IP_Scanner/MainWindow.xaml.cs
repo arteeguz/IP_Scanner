@@ -21,8 +21,7 @@ namespace IPProcessingTool
         public ObservableCollection<ScanStatus> ScanStatuses { get; set; }
         private CancellationTokenSource cancellationTokenSource;
         private ParallelOptions parallelOptions;
-        private ObservableCollection<ColumnSetting> gridColumnSettings;
-        private ObservableCollection<ColumnSetting> outputColumnSettings;
+        private ObservableCollection<ColumnSetting> dataColumnSettings;
         private bool autoSave;
         private int pingTimeout = 1000; // Default value
         private int totalIPs;
@@ -39,8 +38,7 @@ namespace IPProcessingTool
                 MaxDegreeOfParallelism = Environment.ProcessorCount
             };
 
-            gridColumnSettings = new ObservableCollection<ColumnSetting>();
-            outputColumnSettings = new ObservableCollection<ColumnSetting>();
+            dataColumnSettings = new ObservableCollection<ColumnSetting>();
             autoSave = false; // Default value
 
             InitializeColumnSettings();
@@ -51,24 +49,28 @@ namespace IPProcessingTool
 
         private void InitializeColumnSettings()
         {
-            var columns = new[]
+            dataColumnSettings = new ObservableCollection<ColumnSetting>
             {
-                "IP Address", "Hostname", "Last Logged User", "Machine Type", "Machine SKU",
-                "Installed Core Software", "RAM Size", "Windows Version", "Windows Release",
-                "Date", "Time", "Status", "Details"
+                new ColumnSetting { Name = "IP Address", IsSelected = true },
+                new ColumnSetting { Name = "Hostname", IsSelected = true },
+                new ColumnSetting { Name = "Last Logged User", IsSelected = true },
+                new ColumnSetting { Name = "Machine Type", IsSelected = true },
+                new ColumnSetting { Name = "Machine SKU", IsSelected = true },
+                new ColumnSetting { Name = "Installed Core Software", IsSelected = true },
+                new ColumnSetting { Name = "RAM Size", IsSelected = true },
+                new ColumnSetting { Name = "Windows Version", IsSelected = true },
+                new ColumnSetting { Name = "Windows Release", IsSelected = true },
+                new ColumnSetting { Name = "Date", IsSelected = true },
+                new ColumnSetting { Name = "Time", IsSelected = true },
+                new ColumnSetting { Name = "Status", IsSelected = true },
+                new ColumnSetting { Name = "Details", IsSelected = true }
             };
-
-            foreach (var column in columns)
-            {
-                gridColumnSettings.Add(new ColumnSetting { Name = column, IsSelected = true });
-                outputColumnSettings.Add(new ColumnSetting { Name = column, IsSelected = true });
-            }
         }
 
         private void UpdateDataGridColumns()
         {
             StatusDataGrid.Columns.Clear();
-            foreach (var column in gridColumnSettings.Where(c => c.IsSelected))
+            foreach (var column in dataColumnSettings.Where(c => c.IsSelected))
             {
                 StatusDataGrid.Columns.Add(new DataGridTextColumn
                 {
@@ -80,11 +82,10 @@ namespace IPProcessingTool
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            var settingsWindow = new Settings(gridColumnSettings, outputColumnSettings, autoSave, pingTimeout, parallelOptions.MaxDegreeOfParallelism);
+            var settingsWindow = new Settings(dataColumnSettings, autoSave, pingTimeout, parallelOptions.MaxDegreeOfParallelism);
             if (settingsWindow.ShowDialog() == true)
             {
-                gridColumnSettings = new ObservableCollection<ColumnSetting>(settingsWindow.GridColumns);
-                outputColumnSettings = new ObservableCollection<ColumnSetting>(settingsWindow.OutputColumns);
+                dataColumnSettings = new ObservableCollection<ColumnSetting>(settingsWindow.DataColumns);
                 autoSave = settingsWindow.AutoSave;
                 pingTimeout = settingsWindow.PingTimeout;
                 parallelOptions.MaxDegreeOfParallelism = settingsWindow.MaxConcurrentScans;
@@ -247,8 +248,8 @@ namespace IPProcessingTool
                         ManagementScope scope = new ManagementScope($"\\\\{ip}\\root\\cimv2", options);
                         scope.Connect();
 
-                        // Check which columns are selected in the output settings
-                        var selectedColumns = outputColumnSettings.Where(c => c.IsSelected).Select(c => c.Name).ToList();
+                        // Check which columns are selected in the settings
+                        var selectedColumns = dataColumnSettings.Where(c => c.IsSelected).Select(c => c.Name).ToList();
 
                         if (selectedColumns.Contains("Hostname") || selectedColumns.Contains("Machine Type"))
                         {
@@ -605,11 +606,11 @@ namespace IPProcessingTool
                 using (var writer = new StreamWriter(outputFilePath, true, Encoding.UTF8))
                 {
                     // Write header
-                    writer.WriteLine(string.Join(",", outputColumnSettings.Where(c => c.IsSelected).Select(c => $"\"{c.Name}\"")));
+                    writer.WriteLine(string.Join(",", dataColumnSettings.Where(c => c.IsSelected).Select(c => $"\"{c.Name}\"")));
 
                     foreach (var scanStatus in ScanStatuses)
                     {
-                        var line = string.Join(",", outputColumnSettings.Where(c => c.IsSelected).Select(c =>
+                        var line = string.Join(",", dataColumnSettings.Where(c => c.IsSelected).Select(c =>
                         {
                             var value = GetPropertyValue(scanStatus, c.Name.Replace(" ", ""));
                             return $"\"{value}\"";
@@ -638,7 +639,7 @@ namespace IPProcessingTool
             {
                 if (!File.Exists(outputFilePath))
                 {
-                    var header = string.Join(",", outputColumnSettings.Where(c => c.IsSelected).Select(c => $"\"{c.Name}\""));
+                    var header = string.Join(",", dataColumnSettings.Where(c => c.IsSelected).Select(c => $"\"{c.Name}\""));
                     File.WriteAllText(outputFilePath, header + Environment.NewLine);
                 }
             }
