@@ -247,22 +247,36 @@ namespace IPProcessingTool
                         ManagementScope scope = new ManagementScope($"\\\\{ip}\\root\\cimv2", options);
                         scope.Connect();
 
-                        var machineQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystem");
-                        var machineSearcher = new ManagementObjectSearcher(scope, machineQuery);
-                        var machine = machineSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
-                        if (machine != null)
-                        {
-                            scanStatus.Hostname = machine["Name"]?.ToString();
-                            scanStatus.MachineType = machine["Model"]?.ToString();
+                        // Check which columns are selected in the output settings
+                        var selectedColumns = outputColumnSettings.Where(c => c.IsSelected).Select(c => c.Name).ToList();
 
-                            var skuQuery = new ObjectQuery("SELECT * FROM Win32_ComputerSystemProduct");
+                        if (selectedColumns.Contains("Hostname") || selectedColumns.Contains("Machine Type"))
+                        {
+                            var machineQuery = new ObjectQuery("SELECT Name, Model FROM Win32_ComputerSystem");
+                            var machineSearcher = new ManagementObjectSearcher(scope, machineQuery);
+                            var machine = machineSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
+                            if (machine != null)
+                            {
+                                if (selectedColumns.Contains("Hostname"))
+                                    scanStatus.Hostname = machine["Name"]?.ToString();
+                                if (selectedColumns.Contains("Machine Type"))
+                                    scanStatus.MachineType = machine["Model"]?.ToString();
+                            }
+                        }
+
+                        if (selectedColumns.Contains("Machine SKU"))
+                        {
+                            var skuQuery = new ObjectQuery("SELECT Version FROM Win32_ComputerSystemProduct");
                             var skuSearcher = new ManagementObjectSearcher(scope, skuQuery);
                             var sku = skuSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
                             if (sku != null)
                             {
                                 scanStatus.MachineSKU = sku["Version"]?.ToString();
                             }
+                        }
 
+                        if (selectedColumns.Contains("Last Logged User"))
+                        {
                             var userQuery = new ObjectQuery("SELECT UserName FROM Win32_ComputerSystem");
                             var userSearcher = new ManagementObjectSearcher(scope, userQuery);
                             var user = userSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
@@ -270,7 +284,10 @@ namespace IPProcessingTool
                             {
                                 scanStatus.LastLoggedUser = user["UserName"]?.ToString();
                             }
+                        }
 
+                        if (selectedColumns.Contains("Installed Core Software"))
+                        {
                             var softwareQuery = new ObjectQuery("SELECT Name, Version FROM Win32_Product");
                             var softwareSearcher = new ManagementObjectSearcher(scope, softwareQuery);
                             var softwareList = softwareSearcher.Get().Cast<ManagementObject>()
@@ -278,30 +295,35 @@ namespace IPProcessingTool
                                 .Take(10)
                                 .ToList();
                             scanStatus.InstalledCoreSoftware = string.Join(", ", softwareList);
+                        }
 
-                            var ramQuery = new ObjectQuery("SELECT * FROM Win32_PhysicalMemory");
+                        if (selectedColumns.Contains("RAM Size"))
+                        {
+                            var ramQuery = new ObjectQuery("SELECT Capacity FROM Win32_PhysicalMemory");
                             var ramSearcher = new ManagementObjectSearcher(scope, ramQuery);
                             var totalRam = ramSearcher.Get().Cast<ManagementObject>().Sum(ram => Convert.ToDouble(ram["Capacity"]));
                             scanStatus.RAMSize = $"{totalRam / (1024 * 1024 * 1024):F2} GB";
+                        }
 
-                            var osQuery = new ObjectQuery("SELECT * FROM Win32_OperatingSystem");
+                        if (selectedColumns.Contains("Windows Version") || selectedColumns.Contains("Windows Release"))
+                        {
+                            var osQuery = new ObjectQuery("SELECT Caption, BuildNumber FROM Win32_OperatingSystem");
                             var osSearcher = new ManagementObjectSearcher(scope, osQuery);
                             var os = osSearcher.Get().Cast<ManagementObject>().FirstOrDefault();
                             if (os != null)
                             {
-                                scanStatus.WindowsVersion = os["Caption"]?.ToString();
-                                string buildNumber = os["BuildNumber"]?.ToString();
-                                scanStatus.WindowsRelease = MapWindowsRelease(buildNumber);
+                                if (selectedColumns.Contains("Windows Version"))
+                                    scanStatus.WindowsVersion = os["Caption"]?.ToString();
+                                if (selectedColumns.Contains("Windows Release"))
+                                {
+                                    string buildNumber = os["BuildNumber"]?.ToString();
+                                    scanStatus.WindowsRelease = MapWindowsRelease(buildNumber);
+                                }
                             }
+                        }
 
-                            scanStatus.Status = "Complete";
-                            scanStatus.Details = "N/A";
-                        }
-                        else
-                        {
-                            scanStatus.Status = "Error";
-                            scanStatus.Details = "Machine information not found";
-                        }
+                        scanStatus.Status = "Complete";
+                        scanStatus.Details = "N/A";
                     }
                     catch (ManagementException ex)
                     {
