@@ -1,0 +1,48 @@
+private async Task GetOfficeVersionAsync(ScanStatus scanStatus, CancellationToken cancellationToken)
+{
+    try
+    {
+        string officeVersion = "Not Installed";
+
+        // Define the registry paths for different Office versions
+        string[] officeRegistryKeys = {
+            @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\O365ProPlusRetail*",
+            @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2019Volume*",
+            @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2016Volume*",
+            @"HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2013Volume*"
+        };
+
+        foreach (var regKeyPattern in officeRegistryKeys)
+        {
+            string[] regKeys = Registry.LocalMachine.GetSubKeyNames().Where(k => k.Contains(regKeyPattern)).ToArray();
+
+            foreach (var regKey in regKeys)
+            {
+                using (var key = Registry.LocalMachine.OpenSubKey($@"Software\Microsoft\Windows\CurrentVersion\Uninstall\{regKey}"))
+                {
+                    if (key != null)
+                    {
+                        string displayName = key.GetValue("DisplayName") as string;
+                        string displayVersion = key.GetValue("DisplayVersion") as string;
+
+                        if (!string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(displayVersion))
+                        {
+                            officeVersion = $"{displayName} ({displayVersion})";
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (officeVersion != "Not Installed")
+                break;
+        }
+
+        scanStatus.MicrosoftOfficeVersion = officeVersion;
+    }
+    catch (Exception ex)
+    {
+        Logger.Log(LogLevel.ERROR, $"Error getting Microsoft Office version: {ex.Message}", context: "GetOfficeVersionAsync");
+        scanStatus.MicrosoftOfficeVersion = "Error";
+    }
+}
