@@ -5,15 +5,35 @@ private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanS
         string officeVersion = "Unknown";
 
         // Check for Office 365
-        using (var key = Registry.LocalMachine.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\O365ProPlusRetail*"))
+        using (var regKey = Registry.LocalMachine.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\O365ProPlusRetail*"))
         {
-            if (key != null)
+            if (regKey != null)
             {
                 officeVersion = "Microsoft Office 365";
             }
         }
 
-        // Check for Office 2013 and earlier versions using registry keys
+        // Check for Office 2016/2019
+        if (officeVersion == "Unknown")
+        {
+            using (var regKey = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Office\16.0\Common\InstallRoot"))
+            {
+                if (regKey != null)
+                {
+                    var path = regKey.GetValue("Path")?.ToString();
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        var filePath = Path.Combine(path, "winword.exe");
+                        if (File.Exists(filePath))
+                        {
+                            officeVersion = "Microsoft Office 2016/2019";
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check for Office 2013 or earlier
         if (officeVersion == "Unknown")
         {
             string[] officeKeys = {
@@ -31,45 +51,15 @@ private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanS
                         var path = regKey.GetValue("Path")?.ToString();
                         if (!string.IsNullOrEmpty(path))
                         {
-                            var filePath = Path.Combine(path, "winword.exe"); // Checking Word as a reference
+                            var filePath = Path.Combine(path, "winword.exe");
                             if (File.Exists(filePath))
                             {
-                                var fileVersion = FileVersionInfo.GetVersionInfo(filePath).ProductVersion;
                                 if (key.Contains("15.0"))
                                     officeVersion = "Microsoft Office 2013";
                                 else if (key.Contains("14.0"))
                                     officeVersion = "Microsoft Office 2010";
                                 else if (key.Contains("12.0"))
                                     officeVersion = "Microsoft Office 2007";
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Check for Office 2016 and 2019 (they share similar registry paths)
-        if (officeVersion == "Unknown")
-        {
-            string[] office2016_2019Keys = {
-                @"SOFTWARE\Microsoft\Office\16.0\Common\InstallRoot"
-            };
-
-            foreach (var key in office2016_2019Keys)
-            {
-                using (var regKey = Registry.LocalMachine.OpenSubKey(key))
-                {
-                    if (regKey != null)
-                    {
-                        var path = regKey.GetValue("Path")?.ToString();
-                        if (!string.IsNullOrEmpty(path))
-                        {
-                            var filePath = Path.Combine(path, "winword.exe"); // Checking Word as a reference
-                            if (File.Exists(filePath))
-                            {
-                                var fileVersion = FileVersionInfo.GetVersionInfo(filePath).ProductVersion;
-                                officeVersion = "Microsoft Office 2016/2019"; // Treating both as the same since precise distinction is tricky
                                 break;
                             }
                         }
