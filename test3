@@ -1,0 +1,26 @@
+private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+{
+    try
+    {
+        string officeVersion = null;
+
+        // WMI check for all Office-related products
+        var officeQuery = new ObjectQuery("SELECT Name, Version FROM Win32_Product WHERE Name LIKE 'Microsoft Office%'");
+        using var officeSearcher = new ManagementObjectSearcher(scope, officeQuery);
+        var officeList = await Task.Run(() => officeSearcher.Get().Cast<ManagementObject>()
+            .Select(office => $"{office["Name"]} ({office["Version"]})")
+            .ToList(), cancellationToken);
+
+        if (officeList.Any())
+        {
+            officeVersion = string.Join(", ", officeList);
+        }
+        
+        scanStatus.MicrosoftOfficeVersion = !string.IsNullOrEmpty(officeVersion) ? officeVersion : "Not Installed";
+    }
+    catch (Exception ex)
+    {
+        Logger.Log(LogLevel.ERROR, $"Error getting Microsoft Office version: {ex.Message}", context: "GetOfficeVersionAsync");
+        scanStatus.MicrosoftOfficeVersion = "Error";
+    }
+}
