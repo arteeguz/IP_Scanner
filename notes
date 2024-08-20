@@ -2,19 +2,22 @@ private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanS
 {
     try
     {
-        string officeVersion = await Task.Run(() =>
+        string officeVersion = await GetOfficeVersionFromRegistryAsync();
+        
+        // If registry check fails, fallback to WMI check
+        if (string.IsNullOrEmpty(officeVersion))
         {
-            // Attempt 1: Check installed Office products via the registry (WMI fallback if needed)
-            string detectedOfficeVersion = GetOfficeVersionFromRegistry();
-            if (string.IsNullOrEmpty(detectedOfficeVersion))
-            {
-                detectedOfficeVersion = GetOfficeVersionFromWMI(scope);
-            }
+            officeVersion = await GetOfficeVersionFromWMIAsync(scope, cancellationToken);
+        }
 
-            return detectedOfficeVersion ?? "Microsoft Office not found";
-        }, cancellationToken);
+        // If WMI check fails, try checking for specific Office apps
+        if (string.IsNullOrEmpty(officeVersion))
+        {
+            officeVersion = await GetOfficeVersionFromApplicationsAsync();
+        }
 
-        scanStatus.MicrosoftOfficeVersion = officeVersion;
+        // If we found a version, set it, otherwise, mark as not found
+        scanStatus.MicrosoftOfficeVersion = string.IsNullOrEmpty(officeVersion) ? "Not Found" : officeVersion;
     }
     catch (Exception ex)
     {
@@ -22,38 +25,30 @@ private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanS
     }
 }
 
-private string GetOfficeVersionFromRegistry()
+private async Task<string> GetOfficeVersionFromRegistryAsync()
 {
     try
     {
-        // Possible registry keys where Office might be installed
-        string[] registryKeys = new string[]
-        {
-            @"SOFTWARE\Microsoft\Office\16.0\Common\InstallRoot",  // Office 2016/2019/365
+        string[] officeKeys = {
+            @"SOFTWARE\Microsoft\Office\16.0\Common\InstallRoot",  // Office 2016, 2019, 365
             @"SOFTWARE\Microsoft\Office\15.0\Common\InstallRoot",  // Office 2013
             @"SOFTWARE\Microsoft\Office\14.0\Common\InstallRoot",  // Office 2010
             @"SOFTWARE\Microsoft\Office\12.0\Common\InstallRoot",  // Office 2007
-            @"SOFTWARE\Microsoft\Office\Word\InstallRoot",          // Word stand-alone
-            @"SOFTWARE\Microsoft\Office\Excel\InstallRoot",         // Excel stand-alone
-            @"SOFTWARE\Microsoft\Office\PowerPoint\InstallRoot"     // PowerPoint stand-alone
         };
 
-        foreach (string key in registryKeys)
+        foreach (var keyPath in officeKeys)
         {
-            using (RegistryKey regKey = Registry.LocalMachine.OpenSubKey(key))
+            using (var key = Registry.LocalMachine.OpenSubKey(keyPath))
             {
-                if (regKey != null)
+                if (key != null)
                 {
-                    string installPath = regKey.GetValue("Path") as string;
-                    if (!string.IsNullOrEmpty(installPath))
+                    var path = key.GetValue("Path") as string;
+                    if (!string.IsNullOrEmpty(path))
                     {
-                        if (key.Contains("16.0")) return "Microsoft Office 2016/2019/365";
-                        if (key.Contains("15.0")) return "Microsoft Office 2013";
-                        if (key.Contains("14.0")) return "Microsoft Office 2010";
-                        if (key.Contains("12.0")) return "Microsoft Office 2007";
-                        if (key.Contains("Word")) return "Microsoft Word found";
-                        if (key.Contains("Excel")) return "Microsoft Excel found";
-                        if (key.Contains("PowerPoint")) return "Microsoft PowerPoint found";
+                        if (keyPath.Contains("16.0")) return "Office 2016/2019/365";
+                        if (keyPath.Contains("15.0")) return "Office 2013";
+                        if (keyPath.Contains("14.0")) return "Office 2010";
+                        if (keyPath.Contains("12.0")) return "Office 2007";
                     }
                 }
             }
@@ -61,31 +56,83 @@ private string GetOfficeVersionFromRegistry()
     }
     catch (Exception ex)
     {
-        Logger.Log(LogLevel.ERROR, $"Error accessing registry for Office version: {ex.Message}", context: "GetOfficeVersionFromRegistry");
+        Logger.Log(LogLevel.ERROR, $"Registry check failed: {ex.Message}", context: "GetOfficeVersionFromRegistryAsync");
     }
-
     return null;
 }
 
-private string GetOfficeVersionFromWMI(ManagementScope scope)
+private async Task<string> GetOfficeVersionFromWMIAsync(ManagementScope scope, CancellationToken cancellationToken)
 {
     try
     {
-        var officeQuery = new ObjectQuery("SELECT Name, Version FROM Win32_Product WHERE Name LIKE 'Microsoft Office%' OR Name LIKE 'Microsoft Word%' OR Name LIKE 'Microsoft Excel%' OR Name LIKE 'Microsoft PowerPoint%'");
-        using (var searcher = new ManagementObjectSearcher(scope, officeQuery))
+        var query = new ObjectQuery("SELECT Name, Version FROM Win32_Product WHERE Name LIKE 'Microsoft Office%'");
+        using var searcher = new ManagementObjectSearcher(scope, query);
+        var results = await Task.Run(() => searcher.Get().Cast<ManagementObject>().ToList(), cancellationToken);
+        var officeProduct = results.FirstOrDefault();
+        if (officeProduct != null)
         {
-            var officeProducts = searcher.Get().Cast<ManagementObject>().ToList();
-            if (officeProducts.Any())
+            return $"{officeProduct["Name"]} ({officeProduct["Version"]})";
+        }
+    }
+    catch (Exception ex)
+    {
+        Logger.Log(LogLevel.ERROR, $"WMI query failed: {ex.Message}", context: "GetOfficeVersionFromWMIAsync");
+    }
+    return null;
+}
+
+private async Task<string> GetOfficeVersionFromApplicationsAsync()
+{
+    try
+    {
+        // Check if individual applications like Word, Excel are installed and map them to Office version
+        string[] apps = { "winword.exe", "excel.exe", "powerpnt.exe" };
+        foreach (var app in apps)
+        {
+            var appVersion = GetApplicationVersion(app);
+            if (!string.IsNullOrEmpty(appVersion))
             {
-                var officeList = officeProducts.Select(product => $"{product["Name"]} ({product["Version"]})").ToList();
-                return string.Join(", ", officeList);
+                if (appVersion.StartsWith("16")) return "Office 2016/2019/365";
+                if (appVersion.StartsWith("15")) return "Office 2013";
+                if (appVersion.StartsWith("14")) return "Office 2010";
+                if (appVersion.StartsWith("12")) return "Office 2007";
             }
         }
     }
     catch (Exception ex)
     {
-        Logger.Log(LogLevel.ERROR, $"Error querying WMI for Office version: {ex.Message}", context: "GetOfficeVersionFromWMI");
+        Logger.Log(LogLevel.ERROR, $"Application check failed: {ex.Message}", context: "GetOfficeVersionFromApplicationsAsync");
     }
-
     return null;
+}
+
+private string GetApplicationVersion(string appName)
+{
+    try
+    {
+        // You can use the registry or file system to find the app's version
+        var appPath = GetApplicationPath(appName);
+        if (!string.IsNullOrEmpty(appPath))
+        {
+            return FileVersionInfo.GetVersionInfo(appPath).FileVersion;
+        }
+    }
+    catch (Exception ex)
+    {
+        Logger.Log(LogLevel.ERROR, $"Failed to get version for {appName}: {ex.Message}", context: "GetApplicationVersion");
+    }
+    return null;
+}
+
+private string GetApplicationPath(string appName)
+{
+    // Method to retrieve the path of the application, typically by searching the Program Files directory
+    var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+    var appPath = Directory.GetFiles(programFiles, appName, SearchOption.AllDirectories).FirstOrDefault();
+    if (appPath == null)
+    {
+        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        appPath = Directory.GetFiles(programFilesX86, appName, SearchOption.AllDirectories).FirstOrDefault();
+    }
+    return appPath;
 }
