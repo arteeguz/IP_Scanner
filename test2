@@ -1,0 +1,66 @@
+private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+{
+    try
+    {
+        // Simplified Registry check for Office version
+        string[] officeKeys = {
+            @"SOFTWARE\Microsoft\Office\16.0\Common\InstallRoot",
+            @"SOFTWARE\Microsoft\Office\15.0\Common\InstallRoot"
+        };
+
+        string officeVersion = null;
+
+        // Check in the registry for Office version, prioritizing newer versions
+        foreach (var key in officeKeys)
+        {
+            using (var regKey = Registry.LocalMachine.OpenSubKey(key))
+            {
+                if (regKey != null)
+                {
+                    var path = regKey.GetValue("Path")?.ToString();
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        var filePath = Path.Combine(path, "winword.exe"); // Using Word as a reference
+                        if (File.Exists(filePath))
+                        {
+                            var fileVersion = FileVersionInfo.GetVersionInfo(filePath).ProductVersion;
+                            officeVersion = "Microsoft Office " + fileVersion.Substring(0, fileVersion.IndexOf('.'));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check for individual Office apps like Word, Excel, etc.
+        if (string.IsNullOrEmpty(officeVersion))
+        {
+            var appsToCheck = new[] { "winword.exe", "excel.exe", "powerpnt.exe", "outlook.exe" };
+            foreach (var app in appsToCheck)
+            {
+                var filePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft Office", app);
+                if (File.Exists(filePath))
+                {
+                    var fileVersion = FileVersionInfo.GetVersionInfo(filePath).ProductVersion;
+                    officeVersion = $"Microsoft Office {fileVersion.Substring(0, fileVersion.IndexOf('.'))}";
+                    break;
+                }
+            }
+        }
+
+        // Filter output to include only relevant Office versions
+        if (officeVersion != null && officeVersion.Contains("Standard"))
+        {
+            scanStatus.MicrosoftOfficeVersion = officeVersion;
+        }
+        else
+        {
+            scanStatus.MicrosoftOfficeVersion = "Not Installed";
+        }
+    }
+    catch (Exception ex)
+    {
+        Logger.Log(LogLevel.ERROR, $"Error getting Microsoft Office version: {ex.Message}", context: "GetOfficeVersionAsync");
+        scanStatus.MicrosoftOfficeVersion = "Error";
+    }
+}
