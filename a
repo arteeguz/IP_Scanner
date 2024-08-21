@@ -4,6 +4,7 @@ private async Task GetOfficeVersionAsync(string machineName, ScanStatus scanStat
     {
         string officeVersion = "Not Installed";
         string registryPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+        string[] officeKeywords = new[] { "Microsoft Office", "Office 365", "Microsoft 365" };
 
         using (RegistryKey baseKey = RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, machineName))
         using (RegistryKey uninstallKey = baseKey.OpenSubKey(registryPath))
@@ -12,20 +13,30 @@ private async Task GetOfficeVersionAsync(string machineName, ScanStatus scanStat
             {
                 foreach (string subKeyName in uninstallKey.GetSubKeyNames())
                 {
-                    if (subKeyName.StartsWith("O365ProPlusRetail") || 
-                        subKeyName.StartsWith("ProPlus") ||
-                        subKeyName.Contains("Office"))
+                    using (RegistryKey officeKey = uninstallKey.OpenSubKey(subKeyName))
                     {
-                        using (RegistryKey officeKey = uninstallKey.OpenSubKey(subKeyName))
+                        if (officeKey != null)
                         {
-                            if (officeKey != null)
-                            {
-                                string displayName = officeKey.GetValue("DisplayName") as string;
-                                string displayVersion = officeKey.GetValue("DisplayVersion") as string;
+                            string displayName = officeKey.GetValue("DisplayName") as string;
+                            string displayVersion = officeKey.GetValue("DisplayVersion") as string;
 
-                                if (!string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(displayVersion))
+                            if (!string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(displayVersion))
+                            {
+                                if (officeKeywords.Any(keyword => displayName.Contains(keyword, StringComparison.OrdinalIgnoreCase)) &&
+                                    !displayName.Contains("Runtime", StringComparison.OrdinalIgnoreCase) &&
+                                    !displayName.Contains("Tools", StringComparison.OrdinalIgnoreCase))
                                 {
                                     officeVersion = $"{displayName} ({displayVersion})";
+                                    
+                                    // Determine specific version if not clear from displayName
+                                    if (!displayName.Contains("365") && !displayName.Contains("2013") && !displayName.Contains("2016") && !displayName.Contains("2019"))
+                                    {
+                                        if (displayVersion.StartsWith("15."))
+                                            officeVersion += " (Office 2013)";
+                                        else if (displayVersion.StartsWith("16."))
+                                            officeVersion += " (Office 2016 or newer)";
+                                    }
+                                    
                                     break;
                                 }
                             }
