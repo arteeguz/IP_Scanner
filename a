@@ -3,66 +3,72 @@ private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanS
     try
     {
         string officeVersion = "Not Installed";
-        string clickToRunPath = @"SOFTWARE\Microsoft\Office\ClickToRun";
-        string uninstallPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
-
-        // Check if ClickToRun exists
-        var clickToRunQuery = new ObjectQuery($"SELECT * FROM Win32_Registry WHERE CurrentKey = '{clickToRunPath}'");
-        bool isClickToRun = false;
-
-        using (var searcher = new ManagementObjectSearcher(scope, clickToRunQuery))
+        
+        // Check for Office installations using Win32_Product
+        var productQuery = new ObjectQuery("SELECT Name, Version FROM Win32_Product WHERE Name LIKE 'Microsoft Office%' OR Name LIKE 'Microsoft 365%'");
+        using (var searcher = new ManagementObjectSearcher(scope, productQuery))
         {
             var results = await Task.Run(() => searcher.Get(), cancellationToken);
-            isClickToRun = results.Count > 0;
+            foreach (ManagementObject result in results)
+            {
+                string name = result["Name"] as string;
+                string version = result["Version"] as string;
+                if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(version))
+                {
+                    officeVersion = $"{name} ({version})";
+                    break;
+                }
+            }
         }
 
-        if (isClickToRun)
+        // If not found, check specific registry keys
+        if (officeVersion == "Not Installed")
         {
-            // Check ProductReleaseIDs
-            var configQuery = new ObjectQuery($"SELECT * FROM Win32_Registry WHERE CurrentKey = '{clickToRunPath}\\Configuration\\ProductReleaseIDs'");
-            using (var searcher = new ManagementObjectSearcher(scope, configQuery))
+            string[] officeKeys = {
+                @"SOFTWARE\Microsoft\Office\16.0\Common\InstallRoot",
+                @"SOFTWARE\Microsoft\Office\15.0\Common\InstallRoot",
+                @"SOFTWARE\Microsoft\Office\14.0\Common\InstallRoot"
+            };
+
+            foreach (var key in officeKeys)
             {
-                var results = await Task.Run(() => searcher.Get(), cancellationToken);
-                foreach (ManagementObject result in results)
+                var query = new ObjectQuery($"SELECT * FROM Win32_Registry WHERE CurrentKey = '{key}'");
+                using (var searcher = new ManagementObjectSearcher(scope, query))
                 {
-                    if (result["CurrentKey"].ToString().Contains("O365ProPlusRetail"))
+                    var results = await Task.Run(() => searcher.Get(), cancellationToken);
+                    if (results.Count > 0)
                     {
-                        officeVersion = "Microsoft 365";
-                        break;
-                    }
-                    else if (result["CurrentKey"].ToString().Contains("ProPlus2019Retail"))
-                    {
-                        officeVersion = "Office 2019";
-                        break;
-                    }
-                    else if (result["CurrentKey"].ToString().Contains("ProPlus2021Retail"))
-                    {
-                        officeVersion = "Office 2021";
-                        break;
-                    }
-                    else if (result["CurrentKey"].ToString().Contains("ProPlusRetail"))
-                    {
-                        officeVersion = "Office 2016 or newer";
+                        string versionNumber = key.Split('\\')[3];
+                        officeVersion = GetOfficeVersionFromNumber(versionNumber);
                         break;
                     }
                 }
             }
         }
-        else
+
+        // Check for Click-to-Run installation
+        if (officeVersion.StartsWith("Microsoft Office 16"))
         {
-            // Check for MSI installation
-            var uninstallQuery = new ObjectQuery($"SELECT DisplayName, DisplayVersion FROM Win32_Registry WHERE CurrentKey LIKE '{uninstallPath}\\%' AND CurrentKey LIKE '%Office%'");
-            using (var searcher = new ManagementObjectSearcher(scope, uninstallQuery))
+            string clickToRunPath = @"SOFTWARE\Microsoft\Office\ClickToRun\Configuration";
+            var clickToRunQuery = new ObjectQuery($"SELECT * FROM Win32_Registry WHERE CurrentKey = '{clickToRunPath}'");
+            using (var searcher = new ManagementObjectSearcher(scope, clickToRunQuery))
             {
                 var results = await Task.Run(() => searcher.Get(), cancellationToken);
                 foreach (ManagementObject result in results)
                 {
-                    string displayName = result["DisplayName"] as string;
-                    string displayVersion = result["DisplayVersion"] as string;
-                    if (!string.IsNullOrEmpty(displayName) && displayName.Contains("Microsoft Office") && !string.IsNullOrEmpty(displayVersion))
+                    if (result["CurrentKey"].ToString().Contains("ProductReleaseIds"))
                     {
-                        officeVersion = $"{displayName} (MSI) {displayVersion}";
-                        break;
+                        string value = result["Data"] as string;
+                        if (!string.IsNullOrEmpty(value))
+                        {
+                            if (value.Contains("O365"))
+                                officeVersion = "Microsoft 365";
+                            else if (value.Contains("2021"))
+                                officeVersion = "Microsoft Office 2021";
+                            else if (value.Contains("2019"))
+                                officeVersion = "Microsoft Office 2019";
+                            break;
+                        }
                     }
                 }
             }
@@ -74,5 +80,20 @@ private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanS
     {
         Logger.Log(LogLevel.ERROR, $"Error getting Microsoft Office version: {ex.Message}", context: "GetOfficeVersionAsync");
         scanStatus.MicrosoftOfficeVersion = "Error";
+    }
+}
+
+private string GetOfficeVersionFromNumber(string versionNumber)
+{
+    switch (versionNumber)
+    {
+        case "16.0":
+            return "Microsoft Office 16 (2016/2019/2021/365)";
+        case "15.0":
+            return "Microsoft Office 2013";
+        case "14.0":
+            return "Microsoft Office 2010";
+        default:
+            return $"Microsoft Office (Unknown Version: {versionNumber})";
     }
 }
