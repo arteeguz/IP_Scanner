@@ -1,0 +1,48 @@
+private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanStatus, CancellationToken cancellationToken)
+{
+    try
+    {
+        string officeVersion = "Unknown";
+        string[] officeKeys = {
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\O365ProPlusRetail-en-us",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2019Volume-en-us",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2016Volume-en-us",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2013Volume-en-us"
+        };
+
+        foreach (var key in officeKeys)
+        {
+            var query = new ObjectQuery(
+                $"SELECT DisplayName, DisplayVersion FROM Win32_Registry " +
+                $"WHERE CurrentKey = '{key}'"
+            );
+
+            using (var searcher = new ManagementObjectSearcher(scope, query))
+            {
+                var results = await Task.Run(() => searcher.Get(), cancellationToken);
+
+                foreach (ManagementObject result in results)
+                {
+                    string displayName = result["DisplayName"] as string;
+                    string displayVersion = result["DisplayVersion"] as string;
+
+                    if (!string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(displayVersion))
+                    {
+                        officeVersion = $"{displayName} ({displayVersion})";
+                        break;
+                    }
+                }
+
+                if (officeVersion != "Unknown")
+                    break;
+            }
+        }
+
+        scanStatus.MicrosoftOfficeVersion = officeVersion != "Unknown" ? officeVersion : "Not Installed";
+    }
+    catch (Exception ex)
+    {
+        Logger.Log(LogLevel.ERROR, $"Error getting Microsoft Office version: {ex.Message}", context: "GetOfficeVersionAsync");
+        scanStatus.MicrosoftOfficeVersion = "Error";
+    }
+}
