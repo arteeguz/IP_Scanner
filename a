@@ -2,43 +2,73 @@ private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanS
 {
     try
     {
-        string officeVersion = "Unknown";
-        string[] officeKeys = {
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\O365ProPlusRetail - en-us",
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2019Volume - en-us",
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2016Volume - en-us",
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2013Volume - en-us"
-        };
+        string officeVersion = "Not Installed";
+        string clickToRunPath = @"SOFTWARE\Microsoft\Office\ClickToRun";
+        string uninstallPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
 
-        foreach (var key in officeKeys)
+        // Check if ClickToRun exists
+        var clickToRunQuery = new ObjectQuery($"SELECT * FROM Win32_Registry WHERE CurrentKey = '{clickToRunPath}'");
+        bool isClickToRun = false;
+
+        using (var searcher = new ManagementObjectSearcher(scope, clickToRunQuery))
         {
-            var query = new ObjectQuery(
-                $"SELECT DisplayName, DisplayVersion FROM Win32_Registry " +
-                $"WHERE CurrentKey = '{key}'"
-            );
+            var results = await Task.Run(() => searcher.Get(), cancellationToken);
+            isClickToRun = results.Count > 0;
+        }
 
-            using (var searcher = new ManagementObjectSearcher(scope, query))
+        if (isClickToRun)
+        {
+            // Check ProductReleaseIDs
+            var configQuery = new ObjectQuery($"SELECT * FROM Win32_Registry WHERE CurrentKey = '{clickToRunPath}\\Configuration\\ProductReleaseIDs'");
+            using (var searcher = new ManagementObjectSearcher(scope, configQuery))
             {
                 var results = await Task.Run(() => searcher.Get(), cancellationToken);
-
+                foreach (ManagementObject result in results)
+                {
+                    if (result["CurrentKey"].ToString().Contains("O365ProPlusRetail"))
+                    {
+                        officeVersion = "Microsoft 365";
+                        break;
+                    }
+                    else if (result["CurrentKey"].ToString().Contains("ProPlus2019Retail"))
+                    {
+                        officeVersion = "Office 2019";
+                        break;
+                    }
+                    else if (result["CurrentKey"].ToString().Contains("ProPlus2021Retail"))
+                    {
+                        officeVersion = "Office 2021";
+                        break;
+                    }
+                    else if (result["CurrentKey"].ToString().Contains("ProPlusRetail"))
+                    {
+                        officeVersion = "Office 2016 or newer";
+                        break;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Check for MSI installation
+            var uninstallQuery = new ObjectQuery($"SELECT DisplayName, DisplayVersion FROM Win32_Registry WHERE CurrentKey LIKE '{uninstallPath}\\%' AND CurrentKey LIKE '%Office%'");
+            using (var searcher = new ManagementObjectSearcher(scope, uninstallQuery))
+            {
+                var results = await Task.Run(() => searcher.Get(), cancellationToken);
                 foreach (ManagementObject result in results)
                 {
                     string displayName = result["DisplayName"] as string;
                     string displayVersion = result["DisplayVersion"] as string;
-
-                    if (!string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(displayVersion))
+                    if (!string.IsNullOrEmpty(displayName) && displayName.Contains("Microsoft Office") && !string.IsNullOrEmpty(displayVersion))
                     {
-                        officeVersion = $"{displayName} ({displayVersion})";
+                        officeVersion = $"{displayName} (MSI) {displayVersion}";
                         break;
                     }
                 }
-
-                if (officeVersion != "Unknown")
-                    break;
             }
         }
 
-        scanStatus.MicrosoftOfficeVersion = officeVersion != "Unknown" ? officeVersion : "Not Installed";
+        scanStatus.MicrosoftOfficeVersion = officeVersion;
     }
     catch (Exception ex)
     {
