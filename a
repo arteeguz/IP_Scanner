@@ -3,50 +3,30 @@ private async Task GetOfficeVersionAsync(string machineName, ScanStatus scanStat
     try
     {
         string officeVersion = "Not Installed";
-        string[] registryPaths = new string[]
-        {
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-            @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"  // For 32-bit Office on 64-bit Windows
-        };
+        string registryPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
 
         using (RegistryKey baseKey = RegistryKey.OpenRemoteBaseKey(RegistryHive.LocalMachine, machineName))
+        using (RegistryKey uninstallKey = baseKey.OpenSubKey(registryPath))
         {
-            foreach (string registryPath in registryPaths)
+            if (uninstallKey != null)
             {
-                using (RegistryKey uninstallKey = baseKey.OpenSubKey(registryPath))
+                foreach (string subKeyName in uninstallKey.GetSubKeyNames())
                 {
-                    if (uninstallKey != null)
+                    if (subKeyName.StartsWith("O365ProPlusRetail") || 
+                        subKeyName.StartsWith("ProPlus") ||
+                        subKeyName.Contains("Office"))
                     {
-                        foreach (string subKeyName in uninstallKey.GetSubKeyNames())
+                        using (RegistryKey officeKey = uninstallKey.OpenSubKey(subKeyName))
                         {
-                            if (subKeyName.Contains("Office") || subKeyName.Contains("ProPlus") || subKeyName.Contains("O365"))
+                            if (officeKey != null)
                             {
-                                using (RegistryKey officeKey = uninstallKey.OpenSubKey(subKeyName))
-                                {
-                                    if (officeKey != null)
-                                    {
-                                        string displayName = officeKey.GetValue("DisplayName") as string;
-                                        string displayVersion = officeKey.GetValue("DisplayVersion") as string;
+                                string displayName = officeKey.GetValue("DisplayName") as string;
+                                string displayVersion = officeKey.GetValue("DisplayVersion") as string;
 
-                                        if (!string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(displayVersion))
-                                        {
-                                            officeVersion = $"{displayName} ({displayVersion})";
-                                            
-                                            // Determine specific version
-                                            if (displayName.Contains("2013"))
-                                                officeVersion += " (Office 2013)";
-                                            else if (displayName.Contains("2016"))
-                                                officeVersion += " (Office 2016)";
-                                            else if (displayName.Contains("2019"))
-                                                officeVersion += " (Office 2019)";
-                                            else if (displayName.Contains("365"))
-                                                officeVersion += " (Microsoft 365)";
-                                            else if (displayVersion.StartsWith("16."))
-                                                officeVersion += " (Office 2016 or newer)";
-                                            
-                                            return;  // Exit after finding a valid Office installation
-                                        }
-                                    }
+                                if (!string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(displayVersion))
+                                {
+                                    officeVersion = $"{displayName} ({displayVersion})";
+                                    break;
                                 }
                             }
                         }
