@@ -4,10 +4,10 @@ private async Task GetOfficeVersionAsync(ManagementScope scope, ScanStatus scanS
     {
         string officeVersion = "Unknown";
         string[] officeKeys = {
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\O365ProPlusRetail-en-us",
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2019Volume-en-us",
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2016Volume-en-us",
-            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2013Volume-en-us"
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\O365ProPlusRetail - en-us",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2019Volume - en-us",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2016Volume - en-us",
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2013Volume - en-us"
         };
 
         foreach (var key in officeKeys)
