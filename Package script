@@ -1,0 +1,104 @@
+# Variables
+$SzipFilePath = "\\netapp2b\DSS Interns\IP_Scanner.zip"  # Network path to ZIP file
+$StargetPath = "C:\Temp\Angriest_IP_Scanning_Tool"  # Destination folder on the user's PC
+$SshortcutPath = "$([Environment]::GetFolderPath('Desktop'))\Angriest_IP_Scanning_Tool.lnk"  # Shortcut on Desktop
+$SexePath = "$StargetPath\IP_Scanner\IP_Processing_Tool.exe"  # Path to the app's executable
+
+# Function to check network path accessibility
+function Test-NetworkPath {
+    param([string]$path)
+    try {
+        Test-Path $path
+    } catch {
+        return $false
+    }
+}
+
+# Function to check if a user is logged in
+function Test-UserLoggedIn {
+    $users = query user 2>$null
+    return $users -ne $null
+}
+
+# Function to handle errors and display messages
+function Show-ErrorMessage {
+    param([string]$message)
+    Write-Host $message -ForegroundColor Red
+    exit 1
+}
+
+# Check if user is logged in
+if (-not (Test-UserLoggedIn)) {
+    Show-ErrorMessage "No user is logged in. Installation aborted."
+}
+
+# Check network connectivity
+if (-not (Test-Connection -ComputerName "netapp2b" -Count 1 -Quiet)) {
+    Show-ErrorMessage "Network unavailable. Please check your connection and try again."
+}
+
+# Check if the ZIP file path is accessible
+if (-not (Test-NetworkPath -path $SzipFilePath)) {
+    Show-ErrorMessage "Cannot access the ZIP file. Please check the network path or permissions."
+}
+
+# Check if the application is already installed
+if (Test-Path $SexePath) {
+    Write-Host "Application is already installed. Skipping installation."
+    exit 0
+}
+
+# 1. Create target folder if it doesn't exist
+if (!(Test-Path $StargetPath)) {
+    try {
+        New-Item -ItemType Directory -Path $StargetPath | Out-Null
+    } catch {
+        Show-ErrorMessage "Failed to create the target folder. Check permissions and try again."
+    }
+}
+
+# 2. Unzip the application files
+try {
+    Expand-Archive -Path $SzipFilePath -DestinationPath $StargetPath -Force
+} catch {
+    Show-ErrorMessage "Failed to unzip the application files. Check if the ZIP file is valid and try again."
+}
+
+# 3. Create a desktop shortcut
+try {
+    $SWScriptShell = New-Object -ComObject WScript.Shell
+    $Sshortcut = $SWScriptShell.CreateShortcut($SshortcutPath)
+    $Sshortcut.TargetPath = $SexePath
+    $Sshortcut.WorkingDirectory = $StargetPath
+    $Sshortcut.WindowStyle = 1  # Normal window
+    $Sshortcut.Description = "Shortcut to My WPF App"
+    $Sshortcut.IconLocation = "$SexePath,0"  # Optional: use the app's icon
+
+    # Optional: Apply a specific icon
+    # $Sshortcut.IconLocation = "$StargetPath\IP_Scanner\favicon.ico"
+
+    $Sshortcut.Save()
+    Write-Host "Desktop shortcut created successfully."
+} catch {
+    Show-ErrorMessage "Failed to create a desktop shortcut."
+}
+
+# Optional: Create a Taskbar shortcut
+# Uncomment the lines below to add a Taskbar shortcut
+# try {
+#     $StaskbarShortcutPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Angriest_IP_Scanning_Tool.lnk"
+#     $StaskbarShortcut = $SWScriptShell.CreateShortcut($StaskbarShortcutPath)
+#     $StaskbarShortcut.TargetPath = $SexePath
+#     $StaskbarShortcut.WorkingDirectory = $StargetPath
+#     $StaskbarShortcut.WindowStyle = 1
+#     $StaskbarShortcut.Description = "Angriest IP Scanning Tool Taskbar Shortcut"
+#     $StaskbarShortcut.IconLocation = "$SexePath,0"
+#     $StaskbarShortcut.Save()
+#     Write-Host "Taskbar shortcut created successfully."
+# } catch {
+#     Write-Host "Failed to create a Taskbar shortcut." -ForegroundColor Yellow
+# }
+
+Write-Host "Installation completed successfully."
+# Uncomment the line below if you add a Taskbar shortcut
+# Write-Host "Taskbar shortcut created."
